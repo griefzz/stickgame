@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -31,13 +31,13 @@ jobs:
           FILL_WAIT=2 PORT=8787 bun run dist/server.js > server.log 2>&1 &
           for _ in $(seq 1 30); do curl -fsS http://127.0.0.1:8787/health >/dev/null 2>&1 && break; sleep 0.5; done
           curl -fsS http://127.0.0.1:8787/health
-          curl -fsS http://127.0.0.1:8787/ | grep -q '<meta name="build"'
+          curl -fsS -o page.html http://127.0.0.1:8787/ && grep -q '<meta name="build"' page.html
           bun tools/dj-check.ts | tee -a results.log
           bun tools/abuse.ts ws://127.0.0.1:8787/ws | tee -a results.log
           bun tools/queue-bots.ts 4 ws://127.0.0.1:8787/ws | tee -a results.log
           if grep -q FAIL results.log; then echo "::error::server tests failed"; cat server.log; exit 1; fi
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
@@ -50,8 +50,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist
@@ -73,7 +73,7 @@ jobs:
         shell: bash
         run: |
           curl -fsS http://localhost/health
-          curl -fsS http://localhost/ | grep -o '<meta name="build"[^>]*>'
+          curl -fsS -o page.html http://localhost/ && grep -o '<meta name="build"[^>]*>' page.html
           test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost/nope)" = 404
           /usr/local/bin/bun tools/ws-check.ts ws://localhost/ws
 
@@ -89,7 +89,7 @@ jobs:
           sudo -u deploy bash "$REL/activate.sh" rehearsal-2 | tee out.log
           grep -q "client-only" out.log
           test "$(systemctl show -p MainPID --value overclock)" = "$PID"
-          curl -fsS http://localhost/ | grep -q '<title>v2 '
+          curl -fsS -o page2.html http://localhost/ && grep -q '<title>v2 ' page2.html
 
       - name: Server logs
         if: always()
@@ -121,12 +121,12 @@ jobs:
             echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: steps.cfg.outputs.skip != 'true'
         with:
           sparse-checkout: deploy
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         if: steps.cfg.outputs.skip != 'true'
         with:
           name: dist
