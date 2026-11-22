@@ -264,6 +264,7 @@ export class Match {
     b.st = BS_HITSTOP; b.t1 = this.t + hs; b.bunt = bunt; b.perfect = perfect; b.pend = null;
     b.charge = 0; b.chargeBase = b.t1;
     s.frozen = true;
+    s.p.af = s.p.f; // aim window during the freeze is centred on where they faced at contact
     if (s.swing) s.swing.used = true;
     this.event({ k: "hit", s: s.idx, x: q3(x), y: q3(y), z: q3(z), spd: q3(b.speed), hs: q3(hs), bu: bunt ? 1 : 0, pf: perfect ? 1 : 0, n: b.hits });
   }

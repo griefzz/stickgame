@@ -19,6 +19,7 @@ export interface PState {
   wj: number;  // wall jumps used this airtime
   wp: number;  // weapon index (fixed for the match; not sent in snapshots)
   ar: number;  // arena index (fixed for the match; not sent in snapshots)
+  af: number;  // aim anchor: facing at the moment of your last hit (limits aiming during the freeze)
 }
 
 // Buttons bitmask carried by each input.
@@ -41,7 +42,7 @@ export interface Input {
 }
 
 export function newPState(x: number, z: number, wp = 0, ar = 0): PState {
-  return { x, y: 0, z, vx: 0, vy: 0, vz: 0, f: Math.atan2(-x, -z), ay: 0, g: 1, cd: 0, sa: -1, sk: 0, aj: 0, ax: 0, ds: 0, dc: 0, wj: 0, wp, ar };
+  return { x, y: 0, z, vx: 0, vy: 0, vz: 0, f: Math.atan2(-x, -z), ay: 0, g: 1, cd: 0, sa: -1, sk: 0, aj: 0, ax: 0, ds: 0, dc: 0, wj: 0, wp, ar, af: Math.atan2(-x, -z) };
 }
 
 export function copyP(dst: PState, src: PState): PState {
@@ -49,7 +50,7 @@ export function copyP(dst: PState, src: PState): PState {
   dst.vx = src.vx; dst.vy = src.vy; dst.vz = src.vz;
   dst.f = src.f; dst.ay = src.ay; dst.g = src.g;
   dst.cd = src.cd; dst.sa = src.sa; dst.sk = src.sk; dst.aj = src.aj;
-  dst.ax = src.ax; dst.ds = src.ds; dst.dc = src.dc; dst.wj = src.wj; dst.wp = src.wp; dst.ar = src.ar;
+  dst.ax = src.ax; dst.ds = src.ds; dst.dc = src.dc; dst.wj = src.wj; dst.wp = src.wp; dst.ar = src.ar; dst.af = src.af;
   return dst;
 }
 
@@ -84,7 +85,13 @@ export function stepPlayer(p: PState, inp: Input, frozen: boolean): number {
 
   if (mag > 0.2) {
     const target = Math.atan2(mx, mz);
-    p.f = frozen ? target : approachAngle(p.f, target, PLAYER.turnRate * DT);
+    if (frozen) {
+      // Aiming a held shot: clamp to the window around the contact facing, and sweep there.
+      let off = ((((target - p.af + Math.PI) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)) - Math.PI;
+      if (off > SWING.aimCone) off = SWING.aimCone;
+      else if (off < -SWING.aimCone) off = -SWING.aimCone;
+      p.f = approachAngle(p.f, p.af + off, SWING.aimTurn * DT);
+    } else p.f = approachAngle(p.f, target, PLAYER.turnRate * DT);
   }
 
   if (frozen) {

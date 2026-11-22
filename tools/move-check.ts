@@ -1,6 +1,6 @@
 // Unit checks for the shared movement and ball physics (no server needed).
 // Usage: bun tools/move-check.ts
-import { BALL_R, HX, HY, PLAYER, WEAPONS } from "../src/shared/constants";
+import { BALL_R, HX, HY, PLAYER, SWING, WEAPONS } from "../src/shared/constants";
 import { ARENAS, inside } from "../src/shared/arena";
 import { advanceBall, newKin } from "../src/shared/ball";
 import { B_DASH, B_JUMP, B_JUMP_P, B_SWING, newPState, stepPlayer, type PState } from "../src/shared/player";
@@ -149,6 +149,19 @@ const land = (p: PState) => { for (let i = 0; i < 300 && !p.g; i++) step(p, 0); 
   for (let i = 0; i < 60; i++) step(wd, i % PLAYER.dashTicks === 0 ? B_JUMP_P | B_DASH : 0, 1, 0);
   const runD = run.x + 14, wdD = wd.x + 14;
   check("wavedash: chains at about twice running speed", wdD > runD * 1.8 && wd.y === 0, `1 s: ${wdD.toFixed(1)} m vs ${runD.toFixed(1)} m running`);
+}
+
+// Aiming during your own freeze: 90 degree window around the contact facing, swept at 180 deg/s.
+{
+  const p = newPState(0, 0);
+  p.f = 0; p.af = 0;
+  const frozenStep = (mx: number, mz: number) => stepPlayer(p, { s: 0, mx, mz, ay: 0, ax: 0, b: 0, t: 0 }, true);
+  for (let i = 0; i < 6; i++) frozenStep(-0.01, -1); // stick straight behind
+  const after01 = p.f;
+  for (let i = 0; i < 120; i++) frozenStep(-0.01, -1);
+  const deg = (r: number) => ((r * 180) / Math.PI).toFixed(1);
+  check("charge aim: sweeps instead of snapping", Math.abs(after01) <= Math.PI * 0.1 + 1e-9 && Math.abs(after01) > 0.1, `${deg(after01)} deg after 0.1 s`);
+  check("charge aim: stops at the edge of the 90 degree window", Math.abs(Math.abs(p.f) - SWING.aimCone) < 1e-9, `${deg(p.f)} deg after 2 s`);
 }
 
 process.exit(fails ? 1 : 0);

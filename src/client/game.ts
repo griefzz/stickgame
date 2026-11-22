@@ -206,6 +206,7 @@ export class ClientMatch {
         }
         if (e.s === this.slot) {
           this.frozenLocal = true;
+          this.pred.af = this.prevPred.af = this.pred.f;
           rumble(e.pf ? 1 : 0.3 + 0.5 * k, e.pf ? 1 : 0.6, e.pf ? 220 : 90 + 200 * k);
         }
         break;

@@ -2,7 +2,7 @@
 import type { PState } from "./player";
 import { q3 } from "./player";
 
-export const PROTOCOL = 5;
+export const PROTOCOL = 6;
 
 // Ball states
 export const BS_NONE = 0;
@@ -71,7 +71,7 @@ export type ServerMsg =
   | { t: "rerr"; m: string };
 
 export function encodeP(p: PState, flags: number, stocks: number): number[] {
-  return [q3(p.x), q3(p.y), q3(p.z), q3(p.vx), q3(p.vy), q3(p.vz), q3(p.f), q3(p.ay), p.g, p.cd, p.sa, p.sk, flags, stocks, p.aj, q3(p.ax), p.ds, p.dc, p.wj];
+  return [q3(p.x), q3(p.y), q3(p.z), q3(p.vx), q3(p.vy), q3(p.vz), q3(p.f), q3(p.ay), p.g, p.cd, p.sa, p.sk, flags, stocks, p.aj, q3(p.ax), p.ds, p.dc, p.wj, q3(p.af)];
 }
 
 export function decodeP(a: number[], out: PState): PState {
@@ -79,7 +79,7 @@ export function decodeP(a: number[], out: PState): PState {
   out.vx = a[3]; out.vy = a[4]; out.vz = a[5];
   out.f = a[6]; out.ay = a[7]; out.g = a[8];
   out.cd = a[9]; out.sa = a[10]; out.sk = a[11]; out.aj = a[14] ?? 0;
-  out.ax = a[15] ?? 0; out.ds = a[16] ?? 0; out.dc = a[17] ?? 0; out.wj = a[18] ?? 0;
+  out.ax = a[15] ?? 0; out.ds = a[16] ?? 0; out.dc = a[17] ?? 0; out.wj = a[18] ?? 0; out.af = a[19] ?? out.f;
   return out;
 }
 export const P_FLAGS = 12;

@@ -79,6 +79,10 @@ export const SWING = {
   hitUp: 1.3,
   hitR: 1.75,
   animDur: 0.26,         // visual swing length (concept reel's Fs)
+  // Aiming during your own freeze: only within aimCone of where you faced at contact,
+  // turning at aimTurn rad/s, so the aim line sweeps visibly instead of snapping.
+  aimCone: Math.PI / 4,  // 45 degrees either side: a 90 degree window
+  aimTurn: Math.PI,      // 180 degrees per second
 };
 
 // Lag compensation: how far back the server will look for a swing, and how long
