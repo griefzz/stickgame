@@ -85,7 +85,8 @@ echo "==> systemd"
 install -m 644 "$HERE/overclock.service" "$HERE/overclock-update.service" "$HERE/overclock-update.timer" /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable overclock
-if [ "$AUTO_UPDATE" = 1 ]; then systemctl enable --now overclock-update.timer; else systemctl disable --now overclock-update.timer 2>/dev/null || true; fi
+# The timer starts after the first install below, so the two never race.
+if [ "$AUTO_UPDATE" = 1 ]; then systemctl enable overclock-update.timer; else systemctl disable --now overclock-update.timer 2>/dev/null || true; fi
 
 echo "==> nginx"
 sed "s/server_name game.example.com;/server_name $DOMAIN;/" "$HERE/nginx.conf" > /etc/nginx/sites-available/overclock
@@ -106,6 +107,9 @@ fi
 if [ "${SKIP_FIRST_UPDATE:-0}" != 1 ]; then
   echo "==> installing the newest build from $REPO"
   sudo -u overclock-deploy /usr/local/bin/overclock-update --now
+fi
+if [ "$AUTO_UPDATE" = 1 ]; then
+  systemctl start overclock-update.timer
 fi
 
 where="$([ "$DOMAIN" = "_" ] && echo "http://<this server's IP>/" || echo "http://$DOMAIN/")"

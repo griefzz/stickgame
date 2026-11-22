@@ -121,6 +121,20 @@ jobs:
           test "$(basename "$(readlink -f /opt/overclock/dist)")" = rehearsal-3
           /usr/local/bin/bun tools/ws-check.ts ws://localhost/ws
 
+      - name: Two updates at once don't collide
+        shell: bash
+        run: |
+          sudo -u overclock-deploy overclock-update --from-dir /tmp/r2 rehearsal-4 > a.log 2>&1 &
+          A=$!
+          sudo -u overclock-deploy overclock-update --from-dir /tmp/r2 rehearsal-4 > b.log 2>&1 &
+          B=$!
+          wait $A
+          wait $B
+          cat a.log b.log
+          grep -q "already running rehearsal-4" a.log b.log
+          test "$(basename "$(readlink -f /opt/overclock/dist)")" = rehearsal-4
+          curl -fsS http://localhost/health
+
       - name: Logs
         if: always()
         run: sudo journalctl -u overclock --no-pager -n 50 || true

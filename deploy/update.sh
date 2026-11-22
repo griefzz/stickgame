@@ -34,6 +34,11 @@ esac
 if [ "$MODE" = auto ] && [ "$AUTO_UPDATE" != 1 ]; then exit 0; fi
 [[ "$REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die "REPO should look like owner/repo, got: $REPO"
 
+# One update at a time: timer runs skip if one is in progress, manual runs wait for it.
+exec 9>"$APP/.update.lock"
+if [ "$MODE" = auto ]; then flock -n 9 || exit 0
+else flock -w 600 9 || die "another update has been running for 10 minutes"; fi
+
 if [ -z "$TAG" ]; then
   # github.com/<repo>/releases/latest redirects to the newest release's tag page.
   loc="$(curl -fsSI --max-time 20 "https://github.com/$REPO/releases/latest" 2>/dev/null \
