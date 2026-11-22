@@ -7,13 +7,25 @@ const root = import.meta.dir;
 const dist = join(root, "dist");
 mkdirSync(dist, { recursive: true });
 
+// Human-readable version: "build 12 · 1a2b3c4" in CI (matching the release tag), "dev · 1a2b3c4" locally.
+function gitSha(): string {
+  try {
+    const r = Bun.spawnSync(["git", "rev-parse", "HEAD"], { cwd: root });
+    return r.success ? r.stdout.toString().trim() : "";
+  } catch {
+    return "";
+  }
+}
+const sha = (process.env.GITHUB_SHA || gitSha()).slice(0, 7) || "local";
+const VERSION = process.env.GITHUB_RUN_NUMBER ? `build ${process.env.GITHUB_RUN_NUMBER} · ${sha}` : `dev · ${sha}`;
+
 const PLACEHOLDER = "__OC_BUILD_ID__";
 const client = await Bun.build({
   entrypoints: [join(root, "src/client/main.ts")],
   target: "browser",
   format: "esm",
   minify: true,
-  define: { __BUILD__: JSON.stringify(PLACEHOLDER) },
+  define: { __BUILD__: JSON.stringify(PLACEHOLDER), __VERSION__: JSON.stringify(VERSION) },
 });
 if (!client.success) {
   for (const l of client.logs) console.error(l);
@@ -43,7 +55,7 @@ let html = readFileSync(join(root, "src/client/index.html"), "utf8")
 // Build ID = hash of the page itself, so it changes exactly when the client changes.
 // The server reads it from the <meta name="build"> tag and idle players reload into new builds.
 const buildId = new Bun.CryptoHasher("sha256").update(html).digest("hex").slice(0, 12);
-html = html.split(PLACEHOLDER).join(buildId);
+html = html.split(PLACEHOLDER).join(buildId).replace("__OC_VERSION__", () => VERSION.replace(/[<>"&]/g, ""));
 writeFileSync(join(dist, "index.html"), html);
 
 const server = await Bun.build({
@@ -59,5 +71,5 @@ if (!server.success) {
 writeFileSync(join(dist, "server.js"), await server.outputs[0].text());
 
 const kb = (p: string) => (statSync(p).size / 1024).toFixed(0) + " KB";
-console.log(`dist/index.html  ${kb(join(dist, "index.html"))}  build ${buildId}`);
+console.log(`dist/index.html  ${kb(join(dist, "index.html"))}  ${VERSION}  (page id ${buildId})`);
 console.log(`dist/server.js   ${kb(join(dist, "server.js"))}`);

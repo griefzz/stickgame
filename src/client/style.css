@@ -170,6 +170,18 @@ kbd{display:inline-block;font:700 10px/1 var(--ui);letter-spacing:.06em;padding:
 .qnames li.empty.bot::before{content:"Bot if nobody joins";color:rgba(255,120,155,.85)}
 .qinfo{margin:4px 0 8px;font-size:13px;color:#d6d0ec}
 
+.joinrow{display:flex;gap:8px}
+#codeInput{flex:1;min-width:0;appearance:none;border:1px solid var(--line);background:var(--panel-solid);color:var(--text);font:700 18px/1 var(--display);letter-spacing:.3em;text-transform:uppercase;padding:11px 14px;outline:none;user-select:text;-webkit-user-select:text}
+#codeInput:focus,#codeInput.nav-focus{border-color:var(--hot);box-shadow:0 0 0 1px var(--hot)}
+.ghost:disabled{opacity:.4;cursor:not-allowed}
+.roomcode{font:900 104px/.85 var(--display);letter-spacing:.12em;transform:skewX(-10deg);transform-origin:left;text-shadow:5px 5px 0 #000;color:var(--hot);margin:4px 0 2px;user-select:text;-webkit-user-select:text}
+.invite{display:flex;gap:8px}
+#roomLink{flex:1;min-width:0;appearance:none;border:1px solid var(--line);background:rgba(255,255,255,.04);color:var(--muted);font:600 12px/1 var(--ui);padding:10px 12px;outline:none;user-select:text;-webkit-user-select:text}
+.qnames li .tagp{float:right;font:700 10px/1.4 var(--ui);letter-spacing:.16em;color:var(--hot);margin-left:6px}
+.qnames li.you{border-color:var(--hot)}
+.toggle:disabled{cursor:default;opacity:.7}
+.version{position:fixed;left:12px;bottom:max(8px,env(safe-area-inset-bottom,0px));z-index:30;font:600 10px/1 var(--ui);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);opacity:.65;pointer-events:none;font-variant-numeric:tabular-nums}
+@media (max-width:760px){body.ingame .version{display:none}}
 .rhead{display:grid;gap:8px;margin-bottom:6px}
 .rhead .big{font:900 84px/.85 var(--display);transform:skewX(-10deg);transform-origin:left;text-shadow:5px 5px 0 #000;text-transform:uppercase}
 .rhead .big.win{color:var(--hot)}

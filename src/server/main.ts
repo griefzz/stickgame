@@ -36,19 +36,77 @@ function randomBots(n: number, taken: string[]): string[] {
   return pool.slice(0, n).map((b) => b + " (BOT)");
 }
 
-function startMatch(list: Conn[], practice: boolean) {
+function startMatch(list: Conn[], practice: boolean, opts: { bots?: number; room?: Room } = {}): Match | null {
   const players = [...new Set(list)].filter((c) => conns.has(c) && !c.match);
-  if (!players.length) return;
-  for (const c of players) {
-    const i = queue.indexOf(c);
-    if (i >= 0) queue.splice(i, 1);
-  }
+  if (!players.length) return null;
+  for (const c of players) unqueue(c);
   const entrants: { conn: Conn | null; name: string; bot: boolean }[] = players.map((c) => ({ conn: c, name: c.name, bot: false }));
-  const nBots = practice ? MAX_PLAYERS - entrants.length : botsFor(players);
+  const nBots = practice ? MAX_PLAYERS - entrants.length : opts.bots ?? botsFor(players);
   for (const n of randomBots(nBots, players.map((p) => p.name))) entrants.push({ conn: null, name: n, bot: true });
-  const m = new Match(entrants, practice, (done) => matches.delete(done));
+  const room = opts.room;
+  const m = new Match(entrants, practice, (done) => {
+    matches.delete(done);
+    if (room) {
+      // Back to the room for a rematch.
+      room.match = null;
+      for (const c of room.members) if (!c.match) c.state = "room";
+      if (rooms.has(room.code)) sendRoom(room);
+    }
+  }, room?.code ?? null);
+  // Someone leaving a room's match (quit, AFK, disconnect) goes back to the room.
+  m.onConnRemoved = (c) => {
+    if (!c.room || !conns.has(c)) return;
+    c.state = "room";
+    const r = rooms.get(c.room.code);
+    if (r) c.send(roomMsg(r, c));
+  };
   matches.add(m);
-  log(`match ${m.id} start: ${entrants.map((e) => e.name).join(", ")}${practice ? " [practice]" : ""}`);
+  log(`match ${m.id} start: ${entrants.map((e) => e.name).join(", ")}${practice ? " [practice]" : ""}${room ? ` [room ${room.code}]` : ""}`);
+  return m;
+}
+
+// ---------------------------------------------------------------- private rooms
+
+interface Room { code: string; members: Conn[]; host: Conn; bots: boolean; match: Match | null }
+const rooms = new Map<string, Room>();
+const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ"; // no I or O, so codes read cleanly
+
+function newRoomCode(): string {
+  for (;;) {
+    let s = "";
+    for (let i = 0; i < 4; i++) s += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)];
+    if (!rooms.has(s)) return s;
+  }
+}
+
+function roomMsg(r: Room, c: Conn): string {
+  return JSON.stringify({
+    t: "rm", code: r.code, host: r.host === c ? 1 : 0, bots: r.bots ? 1 : 0, max: MAX_PLAYERS, live: r.match ? 1 : 0,
+    players: r.members.map((m) => ({ n: m.name, h: m === r.host ? 1 : 0, y: m === c ? 1 : 0, p: m.match ? 1 : 0 })),
+  });
+}
+
+function sendRoom(r: Room) {
+  for (const m of r.members) m.send(roomMsg(r, m));
+}
+
+function leaveRoom(c: Conn, notify: boolean) {
+  const r = c.room ? rooms.get(c.room.code) : undefined;
+  c.room = null;
+  if (notify) c.send('{"t":"rx"}');
+  if (!r) return;
+  r.members = r.members.filter((m) => m !== c);
+  if (!r.members.length) {
+    rooms.delete(r.code);
+    log(`room ${r.code} closed`);
+    return;
+  }
+  if (r.host === c) r.host = r.members[0];
+  sendRoom(r);
+}
+
+function roomError(c: Conn, msg: string) {
+  c.send(JSON.stringify({ t: "rerr", m: msg }));
 }
 
 /** -1: server has bot filling off, 0: someone in the lobby turned bots off, 1: everyone allows bots. */
@@ -112,7 +170,54 @@ function onMessage(c: Conn, raw: string | Buffer) {
     case "name": {
       const n = cleanName(m.name);
       c.name = n || c.name;
-      if (m.t === "hi") c.send(JSON.stringify({ t: "w", id: c.id, v: PROTOCOL, size: MATCH_SIZE, bf: BOT_FILL_TO, b: clientBuild() }));
+      if (m.t === "hi") c.send(JSON.stringify({ t: "w", id: c.id, v: PROTOCOL, size: MATCH_SIZE, bf: BOT_FILL_TO, b: clientBuild(), ver: pageVersion() }));
+      else if (c.room) { const r = rooms.get(c.room.code); if (r) sendRoom(r); }
+      return;
+    }
+    case "rc": // create a private room
+      if (c.state !== "menu" || c.match || c.room) return;
+      {
+        const r: Room = { code: newRoomCode(), members: [c], host: c, bots: false, match: null };
+        rooms.set(r.code, r);
+        c.room = r;
+        c.state = "room";
+        sendRoom(r);
+        log(`room ${r.code} opened by ${c.name}`);
+      }
+      return;
+    case "rj": { // join a private room by code
+      if (c.match || c.room || (c.state !== "menu" && c.state !== "queue")) return;
+      const code = String(m.code ?? "").toUpperCase().replace(/[^A-Z]/g, "").slice(0, 4);
+      const r = rooms.get(code);
+      if (!r) { roomError(c, code ? `No room with code ${code}` : "Enter a room code"); return; }
+      if (r.members.length >= MAX_PLAYERS) { roomError(c, `Room ${code} is full`); return; }
+      unqueue(c);
+      r.members.push(c);
+      c.room = r;
+      c.state = "room";
+      sendRoom(r);
+      return;
+    }
+    case "rl": // leave the room (and its match, if in one)
+      if (!c.room) return;
+      if (c.match) c.match.removeConn(c);
+      leaveRoom(c, true);
+      c.state = "menu";
+      return;
+    case "rb": { // host: let bots fill empty seats
+      const r = c.room ? rooms.get(c.room.code) : undefined;
+      if (!r || r.host !== c) return;
+      r.bots = m.on === 1 || m.on === true;
+      sendRoom(r);
+      return;
+    }
+    case "rs": { // host: start the match
+      const r = c.room ? rooms.get(c.room.code) : undefined;
+      if (!r || r.host !== c || r.match) return;
+      const humans = r.members.filter((x) => conns.has(x) && !x.match);
+      if (humans.length < 2 && !r.bots) { roomError(c, "Need at least 2 players, or turn on bots"); return; }
+      r.match = startMatch(humans, false, { room: r, bots: r.bots ? MAX_PLAYERS - humans.length : 0 });
+      sendRoom(r);
       return;
     }
     case "bots":
@@ -144,7 +249,7 @@ function onMessage(c: Conn, raw: string | Buffer) {
       unqueue(c);
       if (c.match) c.match.removeConn(c);
       c.match = null;
-      c.state = "menu";
+      c.state = c.room ? "room" : "menu";
       c.send('{"t":"end"}');
       return;
   }
@@ -167,13 +272,13 @@ const server = Bun.serve<Data>({
       if (conns.size >= MAX_CONNS) return new Response("server full", { status: 503 });
       const conn: Conn = {
         id: nextId++, name: `PLAYER-${Math.floor(1000 + Math.random() * 9000)}`, rtt: 0.08,
-        send: () => {}, match: null, slot: -1, state: "menu", ctl: 16, ctlT: now(), bots: false,
+        send: () => {}, match: null, slot: -1, state: "menu", ctl: 16, ctlT: now(), bots: false, room: null,
       };
       if (srv.upgrade(req, { data: { conn } })) return;
       return new Response("websocket upgrade failed", { status: 400 });
     }
     if (url.pathname === "/health") {
-      return Response.json({ ok: true, online: conns.size, queue: queue.length, matches: matches.size });
+      return Response.json({ ok: true, version: pageVersion(), online: conns.size, queue: queue.length, matches: matches.size, rooms: rooms.size });
     }
     if (url.pathname === "/" || url.pathname === "/index.html") {
       if (!existsSync(INDEX)) return new Response("client not built: run `bun run build`", { status: 500 });
@@ -199,6 +304,7 @@ const server = Bun.serve<Data>({
       conns.delete(c);
       unqueue(c);
       if (c.match) c.match.removeConn(c);
+      leaveRoom(c, false);
       c.send = () => {};
     },
   },
@@ -220,18 +326,23 @@ setInterval(stats, 2000);
 
 log(`Overclock server on http://${HOST}:${server.port}  (ws path /ws, match size ${MATCH_SIZE}, min ${MIN_PLAYERS}, fill wait ${FILL_WAIT}s, bot fill ${BOT_FILL_TO ? "to " + BOT_FILL_TO : "off"})`);
 
-// Build ID of the client page currently on disk (re-read when the file or the
-// dist symlink changes), so idle players can reload into a fresh deploy.
-let buildCache = { key: "", id: "" };
-function clientBuild(): string {
+// Build ID and version of the client page currently on disk (re-read when the file or the
+// dist symlink changes), so idle players can reload into a fresh deploy and /health can
+// say which build this server is on.
+let buildCache = { key: "", id: "", ver: "" };
+function readPage() {
   try {
     const key = realpathSync(INDEX) + ":" + statSync(INDEX).mtimeMs;
     if (key !== buildCache.key) {
-      const m = /<meta name="build" content="([^"]+)"/.exec(readFileSync(INDEX, "utf8").slice(0, 4096));
-      buildCache = { key, id: m ? m[1] : "" };
+      const head = readFileSync(INDEX, "utf8").slice(0, 4096);
+      const id = /<meta name="build" content="([^"]+)"/.exec(head);
+      const ver = /<meta name="version" content="([^"]+)"/.exec(head);
+      buildCache = { key, id: id ? id[1] : "", ver: ver ? ver[1] : "" };
     }
-    return buildCache.id;
   } catch {
-    return "";
+    buildCache = { key: "", id: "", ver: "" };
   }
+  return buildCache;
 }
+function clientBuild(): string { return readPage().id; }
+function pageVersion(): string { return readPage().ver || "dev"; }

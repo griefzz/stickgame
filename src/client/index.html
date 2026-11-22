@@ -7,6 +7,7 @@
 <meta name="description" content="Overclock Arena: a 3D deflection arena for up to four players. Every hit speeds the ball up.">
 <meta name="theme-color" content="#08070f">
 <meta name="build" content="__OC_BUILD_ID__">
+<meta name="version" content="__OC_VERSION__">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%2308070f'/%3E%3Ccircle cx='32' cy='32' r='13' fill='%23ff3d6e'/%3E%3Ccircle cx='32' cy='32' r='22' fill='none' stroke='%23ff3d6e' stroke-width='3' opacity='.5'/%3E%3C/svg%3E">
 <style>/*__CSS__*/</style>
 </head>
@@ -72,6 +73,13 @@
         <button type="button" class="btn" id="btnPractice" data-nav disabled>
           <span>Practice vs bots</span>
         </button>
+        <button type="button" class="btn" id="btnRoom" data-nav disabled>
+          <span>Play with friends</span><b>Private room</b>
+        </button>
+        <div class="joinrow">
+          <input id="codeInput" type="text" maxlength="4" placeholder="ROOM CODE" autocomplete="off" spellcheck="false" aria-label="Room code" data-nav>
+          <button type="button" class="ghost" id="btnJoin" data-nav disabled>Join</button>
+        </div>
       </div>
 
       <div class="status">
@@ -141,6 +149,27 @@
     </div>
   </section>
 
+  <!-- Private room -->
+  <section class="screen center" id="scrRoom" hidden>
+    <div class="panel room">
+      <div class="eyebrow">Private room <span class="qtime" id="roomLive"></span></div>
+      <div class="roomcode" id="roomCode">----</div>
+      <div class="invite">
+        <input id="roomLink" type="text" readonly aria-label="Invite link">
+        <button type="button" class="ghost" id="btnCopy" data-nav>Copy link</button>
+      </div>
+      <ol class="qnames" id="roomNames"></ol>
+      <p class="qinfo" id="roomInfo"></p>
+      <button type="button" class="toggle" id="btnRoomBots" role="switch" aria-checked="false" data-nav>
+        <span class="sw" aria-hidden="true"></span>
+        <span class="tl">Fill empty seats with bots</span>
+        <span class="th" id="roomBotsHint">The host decides.</span>
+      </button>
+      <button type="button" class="btn primary" id="btnRoomStart" data-nav data-autofocus><span>Start match</span><span class="glyph"><i class="kb-only">Enter</i><i class="pad-only">A</i></span></button>
+      <button type="button" class="btn danger" id="btnRoomLeave" data-nav><span>Leave room</span></button>
+    </div>
+  </section>
+
   <!-- Pause -->
   <section class="screen center" id="scrPause" hidden>
     <div class="panel pause">
@@ -163,6 +192,7 @@
   </section>
 </div>
 
+<div class="version" id="version" aria-label="Version"></div>
 <div id="fallback" hidden>This browser couldn't start WebGL, so the arena can't render here.<br>Open the page in a recent Chrome, Edge, Firefox or Safari with hardware acceleration turned on.</div>
 <script type="module">/*__JS__*/</script>
 </body>

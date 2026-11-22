@@ -37,6 +37,7 @@ export class ClientMatch {
   slot: number;
   roster: (RosterEntry | null)[];
   practice: boolean;
+  roomCode: string | null;
   cdEnd: number;
   snaps: Snap[] = [];
   latest: Snap | null = null;
@@ -79,12 +80,13 @@ export class ClientMatch {
     this.timers.push(window.setTimeout(() => { if (!this.disposed) fn(); }, ms));
   }
 
-  constructor(net: Net, slot: number, roster: (RosterEntry | null)[], cdEnd: number, practice: boolean) {
+  constructor(net: Net, slot: number, roster: (RosterEntry | null)[], cdEnd: number, practice: boolean, roomCode: string | null = null) {
     this.net = net;
     this.slot = slot;
     this.roster = roster;
     this.cdEnd = cdEnd;
     this.practice = practice;
+    this.roomCode = roomCode;
     this.pred = newPState(0, 0);
     this.prevPred = newPState(0, 0);
     for (const c of chars) c.reset();
@@ -465,7 +467,7 @@ export class ClientMatch {
     const meV = views[this.slot];
     updateCamera(dt, rt, { x: this.ballPos.x, y: this.ballPos.y, z: this.ballPos.z, on: this.ballOn }, meV && meV.alive ? meV : null);
     hudUpdate(dt, { on: this.ballOn, speed, owner, frozen, hitstop: state === BS_HITSTOP, freezeLeft: left, lastFreeze: this.lastFreeze, hits, hitter, threat: this.threat }, hudP);
-    netInfo(Math.round(this.net.rtt * 1000), this.practice);
+    netInfo(Math.round(this.net.rtt * 1000), this.practice ? "PRACTICE" : this.roomCode ? `ROOM ${this.roomCode}` : "");
   }
 
   tick(now: number) {

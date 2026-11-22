@@ -1,9 +1,9 @@
 import { NAME_MAX, SLOTS } from "../shared/constants";
-import type { RosterEntry } from "../shared/protocol";
+import type { RoomState, RosterEntry } from "../shared/protocol";
 import { sfx } from "./audio";
 import type { UiEvent } from "./input";
 
-export type Screen = "title" | "queue" | "pause" | "results" | "none";
+export type Screen = "title" | "queue" | "room" | "pause" | "results" | "none";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -11,6 +11,7 @@ const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&
 const screens: Record<Exclude<Screen, "none">, HTMLElement> = {
   title: $("scrTitle"),
   queue: $("scrQueue"),
+  room: $("scrRoom"),
   pause: $("scrPause"),
   results: $("scrResults"),
 };
@@ -28,6 +29,14 @@ export class Menu {
   onlineEl = $("onlineCount");
   findBtn = $<HTMLButtonElement>("btnFind");
   practiceBtn = $<HTMLButtonElement>("btnPractice");
+  roomBtn = $<HTMLButtonElement>("btnRoom");
+  joinBtn = $<HTMLButtonElement>("btnJoin");
+  codeEl = $<HTMLInputElement>("codeInput");
+  menuBtn = $<HTMLButtonElement>("btnMenu");
+  room: RoomState | null = null;
+  hadSavedName = false;
+  roomStartBtn = $<HTMLButtonElement>("btnRoomStart");
+  roomBotsBtn = $<HTMLButtonElement>("btnRoomBots");
   queueCount = $("queueCount");
   queueNames = $("queueNames");
   queueInfo = $("queueInfo");
@@ -55,10 +64,16 @@ export class Menu {
   onMenu = () => {};
   onName = (_n: string) => {};
   onBots = (_on: boolean) => {};
+  onRoomCreate = () => {};
+  onRoomJoin = (_code: string) => {};
+  onRoomLeave = () => {};
+  onRoomStart = () => {};
+  onRoomBots = (_on: boolean) => {};
 
   constructor() {
     let saved = "";
     try { saved = localStorage.getItem("oc.name") || ""; } catch {}
+    this.hadSavedName = !!saved;
     try { this.botsPref = localStorage.getItem("oc.bots") !== "0"; } catch {}
     this.renderBots();
     for (const b of this.botToggles) {
@@ -76,6 +91,21 @@ export class Menu {
     $("btnShuffle").addEventListener("click", () => { this.nameEl.value = randomName(); this.commitName(); });
     this.findBtn.addEventListener("click", () => { this.commitName(); this.onFind(); });
     this.practiceBtn.addEventListener("click", () => { this.commitName(); this.onPractice(); });
+    this.roomBtn.addEventListener("click", () => { this.commitName(); this.onRoomCreate(); });
+    const join = () => {
+      const code = this.codeEl.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 4);
+      this.codeEl.value = code;
+      if (code.length !== 4) { this.notice("Room codes are 4 letters"); this.codeEl.focus(); return; }
+      this.commitName();
+      this.onRoomJoin(code);
+    };
+    this.joinBtn.addEventListener("click", join);
+    this.codeEl.addEventListener("input", () => { this.codeEl.value = this.codeEl.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 4); });
+    this.codeEl.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); join(); } });
+    $("btnCopy").addEventListener("click", () => this.copyLink());
+    this.roomStartBtn.addEventListener("click", () => this.onRoomStart());
+    $("btnRoomLeave").addEventListener("click", () => this.onRoomLeave());
+    this.roomBotsBtn.addEventListener("click", () => { if (this.room?.host) this.onRoomBots(!this.room.bots); });
     $("btnCancel").addEventListener("click", () => this.onCancel());
     $("btnResume").addEventListener("click", () => this.onResume());
     $("btnLeave").addEventListener("click", () => this.onLeave());
@@ -98,6 +128,7 @@ export class Menu {
     const n = this.name();
     this.nameEl.value = n;
     try { localStorage.setItem("oc.name", n); } catch {}
+    this.hadSavedName = true;
     this.onName(n);
   }
 
@@ -157,6 +188,8 @@ export class Menu {
     this.statusEl.className = "net " + status;
     this.findBtn.disabled = !this.connected;
     this.practiceBtn.disabled = !this.connected;
+    this.roomBtn.disabled = !this.connected;
+    this.joinBtn.disabled = !this.connected;
     if (this.connected && this.screen === "title" && document.activeElement !== this.nameEl) this.setNavFocus(this.findBtn, false);
   }
 
@@ -227,7 +260,63 @@ export class Menu {
       if (!r) return "";
       return `<li style="--c:${SLOTS[s].color}" class="${s === me ? "me" : ""}"><span class="pl">${i + 1}</span><span class="nm">${esc(r.n)}</span><span class="tg">${SLOTS[s].tag}</span></li>`;
     }).join("");
-    this.againBtn.textContent = practice ? "Practice again" : "Find another match";
+    this.againBtn.textContent = this.room ? "Back to room" : practice ? "Practice again" : "Find another match";
+    this.menuBtn.textContent = this.room ? "Leave room" : "Main menu";
     this.show("results");
+  }
+
+  // ---------------------------------------------------------------- private room
+
+  inviteLink(code: string): string {
+    const u = new URL(location.href);
+    u.hash = "";
+    u.searchParams.set("room", code);
+    return u.toString();
+  }
+
+  setRoom(r: RoomState | null) {
+    this.room = r;
+    if (!r) return;
+    $("roomCode").textContent = r.code;
+    ($("roomLink") as HTMLInputElement).value = this.inviteLink(r.code);
+    const names = $("roomNames");
+    names.innerHTML = r.players.map((p) =>
+      `<li class="${p.y ? "you" : ""}">${esc(p.n)}${p.h ? '<span class="tagp">HOST</span>' : ""}${p.y ? '<span class="tagp">YOU</span>' : ""}</li>`,
+    ).join("") + Array.from({ length: Math.max(0, r.max - r.players.length) }, () => `<li class="empty${r.bots ? " bot" : ""}"></li>`).join("");
+    const humans = r.players.length;
+    const canStart = r.host && !r.live && (humans >= 2 || !!r.bots);
+    this.roomStartBtn.hidden = !r.host;
+    this.roomStartBtn.disabled = !canStart;
+    this.roomBotsBtn.setAttribute("aria-checked", String(!!r.bots));
+    this.roomBotsBtn.disabled = !r.host;
+    $("roomBotsHint").textContent = r.host ? "Bots take any seats your friends don't." : "The host decides.";
+    const me = r.players.find((p) => p.y);
+    $("roomLive").textContent = r.live ? "Match in progress" : "";
+    $("roomInfo").textContent = r.live
+      ? me?.p ? "You're in the match." : "A match is running. You'll be in the next one."
+      : r.host
+        ? humans >= 2 || r.bots ? "Start when everyone's here." : "Send the link to a friend, or turn on bots to start now."
+        : "Waiting for the host to start.";
+    // Keep the controller focus on something usable after the buttons change.
+    if (this.screen === "room") {
+      const f = document.querySelector<HTMLElement>("#scrRoom .nav-focus");
+      if (!f || (f as HTMLButtonElement).disabled || f.hidden) {
+        const first = this.navItems()[0];
+        if (first) this.setNavFocus(first, false);
+      }
+    }
+  }
+
+  async copyLink() {
+    if (!this.room) return;
+    const link = this.inviteLink(this.room.code);
+    const input = $("roomLink") as HTMLInputElement;
+    const btn = $("btnCopy");
+    let ok = false;
+    try { await navigator.clipboard.writeText(link); ok = true; } catch {
+      try { input.select(); ok = document.execCommand("copy"); } catch {}
+    }
+    btn.textContent = ok ? "Copied" : "Select + copy";
+    setTimeout(() => { btn.textContent = "Copy link"; }, 1800);
   }
 }

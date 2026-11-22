@@ -8,7 +8,9 @@ A browser game for up to four players. Every hit speeds the ball up. The ball ta
 
 ## Playing
 
-Enter a name and pick **Find a match** or **Practice vs bots**. Keyboard, mouse and standard controllers (Xbox layout) all work, menus included.
+Enter a name and pick **Find a match**, **Practice vs bots**, or **Play with friends**. Keyboard, mouse and standard controllers (Xbox layout) all work, menus included.
+
+**Play with friends** opens a private room with a 4-letter code. Share the link (`…/?room=K7QF`) or the code; the host can let bots fill empty seats and starts the match. When a match ends everyone lands back in the room for a rematch. The version (`build N · commit`) shows in the bottom-left corner, and a server reports its version at `/health`.
 
 | Action | Keyboard + mouse | Controller |
 |---|---|---|
@@ -44,6 +46,7 @@ Open <http://localhost:8787> in two browser windows to play against yourself.
 | `bun tools/lagtest.ts <oneWayMs> [ws-url]` | Hit registration under simulated latency |
 | `bun tools/queue-bots.ts <matchSize> [ws-url]` | Matchmaking rules: bot fill and lobby size (server needs `FILL_WAIT=2`) |
 | `bun tools/abuse.ts [ws-url]` | Queue/leave spam can't fill slots or leak matches |
+| `bun tools/room-check.ts [ws-url]` | Private rooms: create, join, start, rematch, host handover |
 | `bun tools/move-check.ts` | Movement and ball-physics unit checks (jumps, wall jumps, dash, curve) |
 | `bun tools/soak.ts <matches> <seconds> [ws-url]` | Load test with concurrent bot matches |
 | `bun tools/ws-check.ts [ws-url]` | Connects and waits for the server's welcome |

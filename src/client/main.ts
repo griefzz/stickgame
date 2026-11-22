@@ -11,11 +11,25 @@ import { updateFx } from "./render/fx";
 import { WHITE, camera, render, updateCrowd, updateWalls } from "./render/scene";
 
 declare const __BUILD__: string; // injected by build.ts
+declare const __VERSION__: string; // injected by build.ts
 
 const net = new Net();
 const menu = new Menu();
 let match: ClientMatch | null = null;
 let paused = false;
+
+const versionEl = document.getElementById("version")!;
+versionEl.textContent = __VERSION__;
+
+// A ?room=CODE link joins that private room as soon as we're connected.
+let pendingRoom = (new URLSearchParams(location.search).get("room") ?? "").toUpperCase().replace(/[^A-Z]/g, "").slice(0, 4);
+function setRoomParam(code: string | null) {
+  try {
+    const u = new URL(location.href);
+    if (code) u.searchParams.set("room", code); else u.searchParams.delete("room");
+    history.replaceState(null, "", u.toString());
+  } catch {}
+}
 
 try {
   const c = localStorage.getItem("oc.cam") as CamMode | null;
@@ -29,20 +43,56 @@ net.onStatus = (s) => {
   menu.setConnection(s);
   if (s === "closed") {
     if (match) endMatch();
+    // Rejoin the room automatically once the connection is back.
+    if (menu.room) { pendingRoom = menu.room.code; menu.setRoom(null); }
     if (menu.screen !== "title") menu.show("title");
   }
 };
 net.onMsg = (m: ServerMsg) => {
   switch (m.t) {
-    case "w": menu.setServerCfg(m.size, m.bf); serverBuild = m.b; maybeReload(); break;
+    case "w":
+      menu.setServerCfg(m.size, m.bf);
+      serverBuild = m.b;
+      versionEl.title = `Server: ${m.ver}`;
+      if (pendingRoom) {
+        // Returning players jump straight in; first-timers get to pick a name first.
+        if (menu.hadSavedName) net.send({ t: "rj", code: pendingRoom });
+        else if (menu.screen === "title") {
+          menu.codeEl.value = pendingRoom;
+          menu.notice(`You're invited to room ${pendingRoom}. Pick a name, then press Join.`);
+          menu.setNavFocus(menu.joinBtn, false);
+        }
+        pendingRoom = "";
+      }
+      maybeReload();
+      break;
     case "st": menu.setOnline(m.on, m.q, m.m); serverBuild = m.b; maybeReload(); break;
     case "qs": menu.setQueue(m.n, m.min, m.max, m.sIn, m.names, m.bf, m.bo); break;
     case "go": startMatch(m); break;
     case "s": match?.onSnapshot(m); break;
     case "e": match?.onEvent(m); break;
+    case "rm":
+      menu.setRoom(m);
+      setRoomParam(m.code);
+      // Don't pull anyone out of a match or off the results screen; they come back via "Back to room".
+      if (!match && menu.screen !== "room") menu.show("room");
+      break;
+    case "rx":
+      menu.setRoom(null);
+      setRoomParam(null);
+      if (!match && menu.screen === "room") menu.show("title");
+      break;
+    case "rerr":
+      if (menu.screen === "room") document.getElementById("roomInfo")!.textContent = m.m;
+      else { menu.notice(m.m); setRoomParam(null); }
+      break;
     case "end":
-      if (m.r === "afk") { endMatch(); menu.show("title"); menu.notice("Removed from the match for inactivity"); }
-      else if (match && !match.over) { endMatch(); menu.show("title"); }
+      if (m.r === "afk") {
+        endMatch();
+        menu.show(menu.room ? "room" : "title");
+        if (menu.room) document.getElementById("roomInfo")!.textContent = "You were removed from the match for inactivity.";
+        else menu.notice("Removed from the match for inactivity");
+      } else if (match && !match.over) { endMatch(); menu.show(menu.room ? "room" : "title"); }
       break;
   }
 };
@@ -51,7 +101,7 @@ net.connect();
 function startMatch(m: Extract<ServerMsg, { t: "go" }>) {
   if (match) match.dispose();
   const practice = !!m.practice;
-  const cm = new ClientMatch(net, m.slot, m.roster, m.cdEnd, practice);
+  const cm = new ClientMatch(net, m.slot, m.roster, m.cdEnd, practice, m.rm);
   cm.onOver = (rank, w) => {
     setGameActive(false);
     menu.showResults(rank, w, m.roster, m.slot, practice);
@@ -60,6 +110,7 @@ function startMatch(m: Extract<ServerMsg, { t: "go" }>) {
   paused = false;
   menu.show("none");
   setGameActive(true);
+  document.body.classList.add("ingame");
   sfx.found();
 }
 
@@ -68,6 +119,7 @@ function endMatch() {
   match = null;
   paused = false;
   setGameActive(false);
+  document.body.classList.remove("ingame");
 }
 
 function setPaused(p: boolean) {
@@ -102,17 +154,35 @@ menu.onBots = (on) => { if (menu.screen === "queue") net.send({ t: "bots", on: o
 menu.onPractice = () => { unlockAudio(); net.send({ t: "pr" }); };
 menu.onCancel = () => { net.send({ t: "x" }); menu.show("title"); };
 menu.onResume = () => setPaused(false);
-menu.onLeave = () => { net.send({ t: "lv" }); endMatch(); menu.show("title"); };
+menu.onLeave = () => { net.send({ t: "lv" }); endMatch(); menu.show(menu.room ? "room" : "title"); };
 menu.onCam = cycleCam;
 menu.onMute = toggleMute;
 menu.onAgain = () => {
   const practice = match?.practice;
   endMatch();
+  if (menu.room) { menu.show("room"); return; } // rematch from the room
   net.send({ t: "lv" }); // make sure the server has us back in the menu state
   if (practice) net.send({ t: "pr" });
   else joinQueue();
 };
-menu.onMenu = () => { endMatch(); net.send({ t: "lv" }); menu.show("title"); };
+menu.onMenu = () => {
+  endMatch();
+  if (menu.room) { leaveRoom(); return; }
+  net.send({ t: "lv" });
+  menu.show("title");
+};
+
+function leaveRoom() {
+  net.send({ t: "rl" });
+  menu.setRoom(null);
+  setRoomParam(null);
+  menu.show("title");
+}
+menu.onRoomCreate = () => { unlockAudio(); net.send({ t: "rc" }); };
+menu.onRoomJoin = (code) => { unlockAudio(); net.send({ t: "rj", code }); };
+menu.onRoomLeave = leaveRoom;
+menu.onRoomStart = () => { unlockAudio(); net.send({ t: "rs" }); };
+menu.onRoomBots = (on) => net.send({ t: "rb", on: on ? 1 : 0 });
 
 onUi((e) => {
   unlockAudio();

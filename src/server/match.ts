@@ -19,8 +19,9 @@ export interface Conn {
   send(s: string): void;
   match: Match | null;
   slot: number;
-  state: "menu" | "queue" | "match";
+  state: "menu" | "queue" | "match" | "room";
   bots: boolean;             // player allows bots to fill empty seats
+  room: { code: string } | null; // private room this connection belongs to
   ctl: number;               // token bucket for non-input messages
   ctlT: number;
 }
@@ -82,8 +83,12 @@ export class Match {
   elimCount = 0;
   ended = false;
   onEnd: (m: Match) => void;
+  /** Called after a connection leaves this match (quit, kicked or disconnected). */
+  onConnRemoved: (c: Conn) => void = () => {};
+  roomCode: string | null;
 
-  constructor(entrants: { conn: Conn | null; name: string; bot: boolean }[], practice: boolean, onEnd: (m: Match) => void) {
+  constructor(entrants: { conn: Conn | null; name: string; bot: boolean }[], practice: boolean, onEnd: (m: Match) => void, roomCode: string | null = null) {
+    this.roomCode = roomCode;
     this.practice = practice;
     this.onEnd = onEnd;
     this.cdEnd = this.t + COUNTDOWN + 0.6;
@@ -111,7 +116,7 @@ export class Match {
     const roster: (RosterEntry | null)[] = this.slots.map((s) => (s ? { n: s.name, b: s.bot ? 1 : 0 } : null));
     for (const s of this.slots) {
       if (s?.conn) {
-        s.conn.send(JSON.stringify({ t: "go", slot: s.idx, roster, st: q3(this.t), cdEnd: q3(this.cdEnd), practice: practice ? 1 : 0 }));
+        s.conn.send(JSON.stringify({ t: "go", slot: s.idx, roster, st: q3(this.t), cdEnd: q3(this.cdEnd), practice: practice ? 1 : 0, rm: roomCode }));
       }
     }
     this.after(this.cdEnd - this.t, () => {
@@ -380,6 +385,7 @@ export class Match {
       if (s && s.conn === conn) { removed = true; this.dropSlot(s); }
     }
     if (conn.match === this) conn.match = null;
+    if (removed) this.onConnRemoved(conn);
     if (!removed || this.phase === PH_OVER || this.ended) return;
     if (!this.humans().length) { this.end(); return; }
     if (this.contenders().length <= 1) this.after(1.2, () => this.gameOver());
@@ -439,8 +445,8 @@ export class Match {
       else if (wall - s.lastActive > AFK_TIMEOUT) {
         const c = s.conn;
         c.send('{"t":"end","r":"afk"}');
+        c.state = "menu"; // onConnRemoved may move them back to their room
         this.removeConn(c);
-        c.state = "menu";
         if (this.ended) return;
       }
     }

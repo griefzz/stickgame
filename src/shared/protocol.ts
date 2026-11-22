@@ -33,20 +33,39 @@ export type ClientMsg =
   | { t: "pr" }
   | { t: "lv" }
   | { t: "i"; d: [number, number, number, number, number, number, number] } // seq, mx, mz, ay, buttons, t, ax
-  | { t: "p"; c: number };
+  | { t: "p"; c: number }
+  | { t: "rc" }                       // create a private room
+  | { t: "rj"; code: string }         // join a room by code
+  | { t: "rl" }                       // leave the room
+  | { t: "rb"; on: 0 | 1 }            // host: let bots fill empty seats
+  | { t: "rs" };                      // host: start the match
 
 export interface RosterEntry { n: string; b: 0 | 1 }
 
+/** Private room state, sent to every member on any change. */
+export interface RoomState {
+  t: "rm";
+  code: string;
+  host: 0 | 1;                         // you are the host
+  bots: 0 | 1;                         // bots fill empty seats
+  max: number;
+  live: 0 | 1;                         // a match is running
+  players: { n: string; h: 0 | 1; y: 0 | 1; p: 0 | 1 }[]; // name, host, you, playing now
+}
+
 export type ServerMsg =
-  | { t: "w"; id: number; v: number; size: number; bf: number; b: string }
+  | { t: "w"; id: number; v: number; size: number; bf: number; b: string; ver: string }
   | { t: "st"; on: number; q: number; m: number; b: string }
   | { t: "qs"; n: number; min: number; max: number; sIn: number; names: string[]; bf: number; bo: number }
-  | { t: "go"; slot: number; roster: (RosterEntry | null)[]; st: number; cdEnd: number; practice: 0 | 1 }
+  | { t: "go"; slot: number; roster: (RosterEntry | null)[]; st: number; cdEnd: number; practice: 0 | 1; rm: string | null }
   | { t: "s"; a: number; st: number; ph: number; p: (number[] | null)[]; b: number[] }
   | { t: "e"; k: string; st: number; [key: string]: unknown }
   | { t: "po"; c: number; s: number }
   | { t: "end"; r?: string }
-  | { t: "err"; m: string };
+  | { t: "err"; m: string }
+  | RoomState
+  | { t: "rx" }                       // you left (or were removed from) the room
+  | { t: "rerr"; m: string };
 
 export function encodeP(p: PState, flags: number, stocks: number): number[] {
   return [q3(p.x), q3(p.y), q3(p.z), q3(p.vx), q3(p.vy), q3(p.vz), q3(p.f), q3(p.ay), p.g, p.cd, p.sa, p.sk, flags, stocks, p.aj, q3(p.ax), p.ds, p.dc, p.wj];

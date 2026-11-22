@@ -105,8 +105,8 @@ export function countdown(text: string | null) {
   }
 }
 
-export function netInfo(ms: number, practice: boolean) {
-  el.net.textContent = practice ? `PRACTICE · ${ms} ms` : `${ms} ms`;
+export function netInfo(ms: number, label: string) {
+  el.net.textContent = label ? `${label} · ${ms} ms` : `${ms} ms`;
   el.net.classList.toggle("bad", ms > 150);
 }
 
