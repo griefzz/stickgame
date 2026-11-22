@@ -1,0 +1,195 @@
+name: CI / Release
+
+# Every push and pull request is built, tested and rehearsed on a clean Ubuntu machine.
+# Pushes to main then publish the build as a GitHub Release ("build-<n>"). Servers set up
+# with deploy/install.sh check for new releases every couple of minutes and install them,
+# so any number of servers (yours, or anyone's following this repo or a fork) stay current
+# without this workflow needing access to any of them.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun run build
+
+      - name: Server tests
+        shell: bash
+        run: |
+          FILL_WAIT=2 PORT=8787 bun run dist/server.js > server.log 2>&1 &
+          for _ in $(seq 1 30); do curl -fsS http://127.0.0.1:8787/health >/dev/null 2>&1 && break; sleep 0.5; done
+          curl -fsS http://127.0.0.1:8787/health
+          curl -fsS -o page.html http://127.0.0.1:8787/ && grep -q '<meta name="build"' page.html
+          bun tools/dj-check.ts | tee -a results.log
+          bun tools/abuse.ts ws://127.0.0.1:8787/ws | tee -a results.log
+          bun tools/queue-bots.ts 4 ws://127.0.0.1:8787/ws | tee -a results.log
+          if grep -q FAIL results.log; then echo "::error::server tests failed"; cat server.log; exit 1; fi
+
+      - name: Package the release files
+        shell: bash
+        run: |
+          mkdir -p release
+          cp dist/index.html dist/server.js deploy/activate.sh release/
+          tar -czf release/deploy.tar.gz deploy
+          (cd release && sha256sum index.html server.js activate.sh deploy.tar.gz > SHA256SUMS)
+          cat release/SHA256SUMS
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release
+          path: release/
+          if-no-files-found: error
+          retention-days: 14
+
+  rehearsal:
+    name: Server rehearsal (setup + updates on a clean Ubuntu)
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: release
+          path: release
+
+      - name: Setup script
+        run: sudo SKIP_FIRST_UPDATE=1 AUTO_UPDATE=0 REPO="$GITHUB_REPOSITORY" bash deploy/setup-vps.sh
+
+      - name: First build starts the server
+        shell: bash
+        run: |
+          cp -r release /tmp/r1 && chmod -R a+rX /tmp/r1
+          sudo -u overclock-deploy overclock-update --from-dir /tmp/r1 rehearsal-1
+          systemctl is-active overclock
+
+      - name: Through nginx
+        shell: bash
+        run: |
+          curl -fsS http://localhost/health
+          curl -fsS -o page.html http://localhost/ && grep -o '<meta name="build"[^>]*>' page.html
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost/nope)" = 404
+          /usr/local/bin/bun tools/ws-check.ts ws://localhost/ws
+
+      - name: Page-only update keeps the server running
+        shell: bash
+        run: |
+          PID=$(systemctl show -p MainPID --value overclock)
+          cp -r release /tmp/r2 && rm /tmp/r2/SHA256SUMS
+          sed -i 's/<title>/<title>v2 /' /tmp/r2/index.html
+          chmod -R a+rX /tmp/r2
+          sudo -u overclock-deploy overclock-update --from-dir /tmp/r2 rehearsal-2 | tee out2.log
+          grep -q "page-only" out2.log
+          test "$(systemctl show -p MainPID --value overclock)" = "$PID"
+          curl -fsS -o page2.html http://localhost/ && grep -q '<title>v2 ' page2.html
+
+      - name: Server update waits for live matches
+        shell: bash
+        run: |
+          /usr/local/bin/bun tools/hold-match.ts ws://localhost/ws 120 &
+          HOLD=$!
+          for _ in $(seq 1 30); do curl -fsS http://localhost/health | grep -q '"matches":1' && break; sleep 0.5; done
+          curl -fsS http://localhost/health
+          cp -r release /tmp/r3 && rm /tmp/r3/SHA256SUMS
+          echo "// rehearsal" >> /tmp/r3/server.js
+          chmod -R a+rX /tmp/r3
+          sudo -u overclock-deploy overclock-update --from-dir /tmp/r3 rehearsal-3 | tee out3.log
+          grep -q "waiting for 1 live match" out3.log
+          test "$(basename "$(readlink -f /opt/overclock/dist)")" = rehearsal-2
+          kill $HOLD
+          for _ in $(seq 1 30); do curl -fsS http://localhost/health | grep -q '"matches":0' && break; sleep 0.5; done
+          sudo -u overclock-deploy overclock-update --from-dir /tmp/r3 rehearsal-3 | tee out4.log
+          grep -q "server.js changed" out4.log
+          test "$(basename "$(readlink -f /opt/overclock/dist)")" = rehearsal-3
+          /usr/local/bin/bun tools/ws-check.ts ws://localhost/ws
+
+      - name: Logs
+        if: always()
+        run: sudo journalctl -u overclock --no-pager -n 50 || true
+
+  release:
+    name: Publish build
+    needs: [build, rehearsal]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    concurrency:
+      group: release
+      cancel-in-progress: false
+    outputs:
+      tag: ${{ steps.publish.outputs.tag }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      COMMIT_MSG: ${{ github.event.head_commit.message }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: release
+          path: release
+
+      - name: Publish
+        id: publish
+        shell: bash
+        run: |
+          TAG="build-${GITHUB_RUN_NUMBER}"
+          [ "$GITHUB_RUN_ATTEMPT" = 1 ] || TAG="${TAG}.${GITHUB_RUN_ATTEMPT}"
+          printf '%s\n\nCommit %s\n' "${COMMIT_MSG:-Manual build}" "$GITHUB_SHA" > notes.md
+          gh release create "$TAG" release/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Build ${GITHUB_RUN_NUMBER} (${GITHUB_SHA::7})" --notes-file notes.md --latest
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Keep the 10 newest builds
+        shell: bash
+        run: |
+          gh release list --repo "$GITHUB_REPOSITORY" --limit 200 --json tagName,createdAt \
+            --jq '[.[] | select(.tagName | startswith("build-"))] | sort_by(.createdAt) | reverse | .[10:] | .[].tagName' \
+          | while read -r t; do gh release delete "$t" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes; done
+
+  install-check:
+    name: One-line install from the published build
+    needs: release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install exactly as an operator would
+        run: curl -fsSL "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${GITHUB_SHA}/deploy/install.sh" | sudo REPO="$GITHUB_REPOSITORY" bash
+
+      - name: Check
+        shell: bash
+        env:
+          PUBLISHED: ${{ needs.release.outputs.tag }}
+        run: |
+          LIVE="$(basename "$(readlink -f /opt/overclock/dist)")"
+          echo "published $PUBLISHED, installed $LIVE"
+          [[ "$LIVE" == build-* ]]
+          curl -fsS http://localhost/health
+          /usr/local/bin/bun tools/ws-check.ts ws://localhost/ws
+          systemctl is-enabled overclock-update.timer
+          sudo -u overclock-deploy overclock-update --now | tee out.log
+          grep -q "already running" out.log
+
+      - name: Logs
+        if: always()
+        run: sudo journalctl -u overclock -u overclock-update --no-pager -n 60 || true

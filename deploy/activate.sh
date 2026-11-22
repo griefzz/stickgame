@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Runs on the VPS (as the deploy user) once a release has been uploaded to
-# /opt/overclock/releases/<id>/. It:
-#   1. points /opt/overclock/dist at the new release (an atomic symlink swap),
-#   2. restarts the game server only if server.js changed, so client-only updates
-#      don't interrupt matches (idle players reload into the new page by themselves),
+# Switches the server to a release that is already unpacked in /opt/overclock/releases/<id>/.
+# Called by overclock-update (as overclock-deploy). It:
+#   1. points /opt/overclock/dist at the release (an atomic symlink swap),
+#   2. restarts the game server only if server.js changed, so page-only updates don't
+#      interrupt matches (idle players reload into the new page by themselves),
 #   3. health-checks the server and rolls back to the previous release if it fails,
 #   4. keeps the five newest releases.
 # Usage: activate.sh <release-id>
@@ -41,7 +41,7 @@ if [ "$restart" = 1 ]; then
   echo "server.js changed: restarting overclock"
   sudo -n /usr/bin/systemctl restart overclock
 else
-  echo "client-only update: no restart, live matches keep running"
+  echo "page-only update: no restart, live matches keep running"
 fi
 
 if ! healthy; then

@@ -4,7 +4,7 @@ A browser game for up to four players. Every hit speeds the ball up. The ball ta
 
 - **Client:** `dist/index.html` is one self-contained file. three.js, CSS and fonts are inlined, and it makes no external requests.
 - **Server:** `dist/server.js` is a Bun WebSocket server. It handles matchmaking and runs every match authoritatively at 60 Hz, with bots for practice and empty seats. It has no npm dependencies at runtime.
-- **Deploys:** every push to `main` is built, tested, rehearsed on a clean Ubuntu machine, then shipped to the VPS by GitHub Actions.
+- **Hosting:** anyone can run a server with one command. Servers install each tested build this repo publishes, automatically.
 
 ## Playing
 
@@ -40,96 +40,74 @@ Open <http://localhost:8787> in two browser windows to play against yourself.
 | `bun tools/dj-check.ts` | Double jump unit check |
 | `bun tools/soak.ts <matches> <seconds> [ws-url]` | Load test with concurrent bot matches |
 | `bun tools/ws-check.ts [ws-url]` | Connects and waits for the server's welcome |
+| `bun tools/hold-match.ts [ws-url] [seconds]` | Keeps a practice match running (CI uses it to test that updates wait for matches) |
 
 The client connects to `/ws` on whatever host served the page. To point it elsewhere, add `?server=ws://host:port/ws` to the URL. Opening `dist/index.html` straight from disk defaults to `ws://localhost:8787/ws`.
 
-## Deploy
+## Run your own server
 
-### The pipeline
-
-`.github/workflows/deploy.yml` runs on every push and pull request:
-
-1. **Build and test:** type-check, build, start the server, and run the server tests.
-2. **VPS rehearsal:** on a fresh Ubuntu 24.04 runner, run `deploy/setup-vps.sh` and deploy the build with `deploy/activate.sh`. Then check the page, `/health` and the WebSocket through nginx, and check that a client-only update doesn't restart the server.
-3. **Deploy** (pushes to `main` only): upload the build to `/opt/overclock/releases/<commit>/` over SSH and run `activate.sh` there.
-
-`activate.sh` points `/opt/overclock/dist` at the new release, then:
-
-- **Server code changed:** restarts the game server. Matches in progress end.
-- **Only the page changed:** no restart. Live matches keep running.
-
-Either way, players idling on the title screen reload into the new version within a few seconds. Nobody is pulled out of a match or the queue.
-
-If the server fails its health check, the script switches back to the previous release and the workflow run fails. The five newest releases are kept.
-
-Until the secrets below exist, the deploy job skips itself with a notice, and builds still run.
-
-### One-time setup
-
-You need an Ubuntu 22.04 or 24.04 VPS with SSH access and sudo. Optionally, point a domain at it.
-
-**1. Create a deploy key** on your own machine. GitHub Actions uses it to log in as the `deploy` user.
+Anyone can host the game on an Ubuntu 22.04 or 24.04 server. One command installs everything (nginx, Bun, the game and an updater), and the server then follows this repo's builds by itself:
 
 ```sh
-ssh-keygen -t ed25519 -f overclock_deploy -N "" -C overclock-deploy
+curl -fsSL https://raw.githubusercontent.com/griefzz/stickgame/main/deploy/install.sh | sudo bash
 ```
 
-**2. Prepare the VPS.** This installs nginx and Bun, and creates the `overclock` (runs the game) and `deploy` (receives builds) users. The `deploy` user's only extra right is restarting the game service. The script also installs the systemd service and the nginx site. It is safe to re-run.
+Open `http://<your server's IP>/` and play. With a domain, pass it so nginx answers on that name, then add HTTPS. The client switches to `wss://` by itself.
 
 ```sh
-git clone https://github.com/griefzz/stickgame.git && cd stickgame
-sudo DOMAIN=game.example.com \
-     DEPLOY_PUBKEY="$(cat overclock_deploy.pub)" \
-     bash deploy/setup-vps.sh
+curl -fsSL https://raw.githubusercontent.com/griefzz/stickgame/main/deploy/install.sh | sudo DOMAIN=game.example.com bash
+sudo apt-get install -y certbot python3-certbot-nginx && sudo certbot --nginx -d game.example.com
 ```
 
-Paste the `.pub` file's contents if it isn't on the VPS. Leave `DOMAIN` out to serve on the bare IP.
+Installer options (environment variables):
 
-**3. Add the secrets** from your machine. They live on the `production` environment, which only accepts deployments from `main`. That way, workflows running on any other branch can never read the VPS key.
-
-```sh
-gh secret set VPS_HOST --env production --repo griefzz/stickgame --body "your.vps.ip.or.hostname"
-gh secret set VPS_SSH_KEY --env production --repo griefzz/stickgame < overclock_deploy
-ssh-keyscan -H your.vps.ip.or.hostname | gh secret set VPS_KNOWN_HOSTS --env production --repo griefzz/stickgame
-```
-
-To set up the branch lock on a fresh copy of the repo:
-
-```sh
-gh api -X PUT repos/griefzz/stickgame/environments/production \
-  -F 'deployment_branch_policy[protected_branches]=false' -F 'deployment_branch_policy[custom_branch_policies]=true'
-gh api -X POST repos/griefzz/stickgame/environments/production/deployment-branch-policies -f name=main -f type=branch
-```
-
-| Secret | Required | Meaning |
+| Option | Default | Meaning |
 |---|---|---|
-| `VPS_HOST` | yes | VPS IP or hostname |
-| `VPS_SSH_KEY` | yes | Private half of the deploy key |
-| `VPS_KNOWN_HOSTS` | recommended | `ssh-keyscan` output. It pins the VPS host key; without it the key is trusted on first sight in every run. |
-| `VPS_USER` | no | Defaults to `deploy` |
-| `VPS_PORT` | no | Defaults to `22` |
+| `DOMAIN` | any | Host name nginx answers on. Leave it out to serve on the bare IP. |
+| `REPO` | `griefzz/stickgame` | GitHub repo whose builds the server follows, e.g. your fork |
+| `AUTO_UPDATE` | `1` | `0` installs the current build and then only updates when you ask |
 
-**4. Deploy:** push to `main`, or run **CI / Deploy** from the Actions tab. The first deploy starts the server.
+Re-running the installer is safe. It refreshes the setup and keeps your settings.
 
-**5. HTTPS:**
+Your server installs whatever the repo it follows publishes, so point `REPO` only at a repo you trust or control.
 
-```sh
-sudo apt-get install -y certbot python3-certbot-nginx
-sudo certbot --nginx -d game.example.com
-```
+### How updates reach servers
 
-The client switches to `wss://` by itself.
+1. **CI builds and tests every push.** `.github/workflows/ci.yml` type-checks, builds and runs the server tests. Then, on a clean Ubuntu machine, it runs the setup script and rehearses three updates:
+   - a first install;
+   - a page-only update, checking the server keeps running;
+   - a server update, checking it waits for a live match to end.
+2. **Pushes to `main` are published** as a GitHub Release named `build-<n>`. The release holds `index.html`, `server.js`, the setup files and checksums. The 10 newest builds are kept.
+3. **CI then installs the published build** with the one-line command above on another clean machine, to prove the public install path works.
+4. **Every server checks for a new release every 2 minutes** (`overclock-update.timer`). It downloads and verifies the files, then switches over instantly:
+   - **Page-only changes:** no restart, so matches keep running.
+   - **Server changes:** restart the game server, but first wait for live matches to end, for up to 30 minutes.
+   - **Failed health check:** the server rolls back to the previous build.
+
+   Players idling on the title screen reload into the new version by themselves.
+
+CI needs no secrets and no access to any server, so it works the same for forks.
+
+### Running from a fork
+
+1. Fork the repo and enable Actions on the fork (GitHub turns them off for forks).
+2. Push to the fork's `main`. Its CI publishes `build-<n>` releases on the fork.
+3. Install on your server with `REPO=<you>/<your-fork>`, or switch an existing server by editing `REPO` in `/etc/overclock/update.conf`.
 
 ### Day to day
 
-- **Ship:** merge or push to `main`.
-- **Roll back:** revert the commit and push. Or re-activate a kept release on the VPS with `sudo -u deploy bash /opt/overclock/releases/<commit>/activate.sh <commit>`.
-- **Logs:** `journalctl -u overclock -f`.
-- **Status:** `curl http://127.0.0.1:8787/health` on the VPS.
+| Task | Command |
+|---|---|
+| Update now | `sudo -u overclock-deploy overclock-update --now` |
+| Install a specific build (roll back) | `sudo -u overclock-deploy overclock-update --tag build-41`, and set `AUTO_UPDATE=0` to stay on it |
+| Pause automatic updates | Set `AUTO_UPDATE=0` in `/etc/overclock/update.conf` |
+| Update log | `journalctl -u overclock-update` |
+| Game log | `journalctl -u overclock -f` |
+| Status | `curl http://127.0.0.1:8787/health` |
 
 ## Server settings
 
-Edit `/etc/systemd/system/overclock.service` on the VPS (`deploy/overclock.service` in the repo), then run `sudo systemctl daemon-reload && sudo systemctl restart overclock`. When running locally, set them as environment variables.
+On a server, edit `/etc/overclock/overclock.env`, then run `sudo systemctl restart overclock`. Updates never overwrite this file. When running locally, set them as environment variables.
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -137,10 +115,10 @@ Edit `/etc/systemd/system/overclock.service` on the VPS (`deploy/overclock.servi
 | `MIN_PLAYERS` | `2` | Fewest humans the queue will start a match with |
 | `FILL_WAIT` | `12` | Seconds to wait for a full lobby once `MIN_PLAYERS` are queued |
 | `BOT_FILL_TO` | `MATCH_SIZE` | When the wait runs out, bots top the match up to this many seats, but only if every player in the lobby has **Fill empty seats with bots** on. `0` turns bots off for queue matches and hides the toggle. |
-| `PORT` | `8787` | Listen port. `activate.sh` health-checks this port; set `GAME_PORT` for it if you change it. |
-| `HOST` | `0.0.0.0` | Bind address. The service uses `127.0.0.1`, behind nginx. |
 | `MAX_CONNS` | `400` | Connection cap |
-| `INDEX_HTML` | next to `server.js` | Page served at `/` and read for the build ID. The service points it through the `dist` symlink. |
+| `PORT` | `8787` | Listen port. On a server it's set in the service file, and nginx expects 8787. |
+| `HOST` | `0.0.0.0` | Bind address. The service uses `127.0.0.1`, behind nginx. |
+| `INDEX_HTML` | next to `server.js` | Page served at `/` and read for the build ID |
 
 Examples:
 
@@ -170,7 +148,7 @@ src/shared/          constants, player movement, ball physics, shot aiming, wire
 src/server/          main.ts (HTTP/WebSocket + matchmaking), match.ts (game sim), bot.ts
 src/client/          main.ts, game.ts (prediction/interpolation/effects), net, input, menu, hud, audio
 src/client/render/   scene (arena), character, ball (+trail, aim telegraph), fx, camera
-deploy/              setup-vps.sh, activate.sh, overclock.service, nginx.conf
+deploy/              install.sh, setup-vps.sh, update.sh (overclock-update), activate.sh, systemd units, nginx.conf
 tools/               test and load scripts
 assets/fonts/        Big Shoulders Display + Chakra Petch (SIL OFL), embedded at build time
 ```

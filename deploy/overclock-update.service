@@ -1,0 +1,11 @@
+# Installs new Overclock Arena builds from GitHub. Triggered by overclock-update.timer.
+[Unit]
+Description=Overclock Arena: install new builds from GitHub
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=overclock-deploy
+Group=overclock-deploy
+ExecStart=/usr/local/bin/overclock-update

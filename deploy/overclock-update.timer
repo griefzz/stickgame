@@ -1,0 +1,12 @@
+# Checks for new Overclock Arena builds every two minutes.
+# Change the interval with: sudo systemctl edit overclock-update.timer
+[Unit]
+Description=Check for Overclock Arena updates
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=2min
+RandomizedDelaySec=20s
+
+[Install]
+WantedBy=timers.target
