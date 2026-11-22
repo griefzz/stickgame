@@ -51,7 +51,8 @@ if [ -z "$TAG" ]; then
 fi
 [[ "$TAG" =~ ^[A-Za-z0-9._-]+$ ]] || die "odd release tag: $TAG"
 
-CURRENT="$(basename "$(readlink -f "$APP/dist" 2>/dev/null || echo none)")"
+CURRENT=none
+[ -L "$APP/dist" ] && CURRENT="$(basename "$(readlink -f "$APP/dist")")"
 if [ "$TAG" = "$CURRENT" ]; then
   [ "$MODE" = auto ] || log "already running $TAG"
   exit 0
