@@ -1,7 +1,7 @@
 // Unit checks for the shared movement and ball physics (no server needed).
 // Usage: bun tools/move-check.ts
 import { BALL_R, HX, HY, PLAYER, SWING, WEAPONS } from "../src/shared/constants";
-import { ARENAS, inside } from "../src/shared/arena";
+import { ARENAS, inside, randomPoint } from "../src/shared/arena";
 import { advanceBall, newKin } from "../src/shared/ball";
 import { B_DASH, B_JUMP, B_JUMP_P, B_SWING, newPState, stepPlayer, type PState } from "../src/shared/player";
 import { CURVE_TURN, shotDir } from "../src/shared/shot";
@@ -162,6 +162,40 @@ const land = (p: PState) => { for (let i = 0; i < 300 && !p.g; i++) step(p, 0); 
   const deg = (r: number) => ((r * 180) / Math.PI).toFixed(1);
   check("charge aim: sweeps instead of snapping", Math.abs(after01) <= Math.PI * 0.1 + 1e-9 && Math.abs(after01) > 0.1, `${deg(after01)} deg after 0.1 s`);
   check("charge aim: stops at the edge of the 90 degree window", Math.abs(Math.abs(p.f) - SWING.aimCone) < 1e-9, `${deg(p.f)} deg after 2 s`);
+}
+
+// Fuzz: random balls (up to top speed) and random players never end up outside any arena.
+{
+  let seed = 12345;
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  for (let ai = 0; ai < ARENAS.length; ai++) {
+    const a = ARENAS[ai];
+    let ballOut = 0, playerOut = 0;
+    for (let n = 0; n < 200; n++) {
+      const st = randomPoint(a, 1, rnd);
+      const k = newKin(ai); k.x = st.x; k.z = st.z; k.y = 1 + rnd() * 10;
+      const sp = 20 + rnd() * 480, th = rnd() * Math.PI * 2, ph = (rnd() - 0.5) * 1.2;
+      k.vx = Math.sin(th) * Math.cos(ph) * sp; k.vz = Math.cos(th) * Math.cos(ph) * sp; k.vy = Math.sin(ph) * sp;
+      if (rnd() < 0.3) { k.cv = (rnd() - 0.5) / 6; k.ct = 1.25; }
+      for (let i = 0; i < 60; i++) {
+        const sub = Math.max(1, Math.ceil((sp / 60) / 0.4));
+        for (let j = 0; j < sub; j++) advanceBall(k, 1 / 60 / sub);
+        if (!inside(a, k.x, k.z, BALL_R - 1e-3)) { ballOut++; break; }
+      }
+    }
+    for (let n = 0; n < 40; n++) {
+      const st = randomPoint(a, 2, rnd);
+      const p = newPState(st.x, st.z, 0, ai);
+      let mx = 0, mz = 0;
+      for (let i = 0; i < 600; i++) {
+        if (i % 20 === 0) { const t = rnd() * Math.PI * 2; mx = Math.sin(t); mz = Math.cos(t); }
+        const b = (rnd() < 0.05 ? B_JUMP_P | B_JUMP : 0) | (rnd() < 0.04 ? B_DASH : 0);
+        step(p, b, mx, mz);
+        if (!inside(a, p.x, p.z, PLAYER.wallMargin - 0.01)) { playerOut++; break; }
+      }
+    }
+    check(`${a.key}: fuzz, 200 random balls + 40 random players stay inside`, ballOut === 0 && playerOut === 0, `balls out ${ballOut}, players out ${playerOut}`);
+  }
 }
 
 process.exit(fails ? 1 : 0);

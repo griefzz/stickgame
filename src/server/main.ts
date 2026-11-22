@@ -22,7 +22,7 @@ const BOT_FILL_TO = (() => { const v = clampInt(+env("BOT_FILL_TO", String(MATCH
 const MAX_CONNS = +env("MAX_CONNS", "400");
 // Arenas used by queue and practice matches, picked at random each match (rooms pick their own).
 const ARENA_POOL = (() => {
-  const p = env("ARENAS", "box,octagon,pentagon,circle").split(",").map((s) => arenaIndex(s.trim().toLowerCase())).filter((i) => i >= 0);
+  const p = env("ARENAS", ARENAS.map((a) => a.key).join(",")).split(",").map((s) => arenaIndex(s.trim().toLowerCase())).filter((i) => i >= 0);
   return p.length ? p : [0];
 })();
 const pickArena = () => ARENA_POOL[Math.floor(Math.random() * ARENA_POOL.length)];

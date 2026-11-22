@@ -11,7 +11,7 @@ import {
   PF_INVULN, PF_OUT, PH_COUNTDOWN, PH_OVER, PH_PLAY, encodeP, type RosterEntry,
 } from "../shared/protocol";
 import { Bot } from "./bot";
-import { ARENAS, arenaOf, randomPoint } from "../shared/arena";
+import { ARENAS, arenaOf, randomPoint, spawnPoint } from "../shared/arena";
 
 export type Entrant = { conn: Conn | null; name: string; bot: boolean; w: number };
 
@@ -109,7 +109,7 @@ export class Match {
     for (let i = 0; i < MAX_PLAYERS; i++) {
       const e = bySlot[i];
       if (!e) { this.slots.push(null); continue; }
-      const sp = SPAWNS[i];
+      const sp = spawnPoint(arenaOf(this.arena), i);
       const w = Number.isInteger(e.w) && WEAPONS[e.w] ? e.w : 0;
       const s: Slot = {
         idx: i, name: e.name, conn: e.conn, bot: e.bot ? new Bot(i) : null,

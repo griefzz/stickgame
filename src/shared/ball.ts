@@ -1,5 +1,5 @@
 import { BALL_R, BY0, BY1, LOB_GRAVITY } from "./constants";
-import { arenaOf, constrain, type Arena } from "./arena";
+import { arenaOf, constrain, deepestPenetration } from "./arena";
 
 export interface BallKin {
   x: number; y: number; z: number;
@@ -24,37 +24,21 @@ export function substepsFor(b: BallKin, dt: number): number {
   return Math.max(1, Math.min(24, Math.ceil(d / SUBSTEP_LEN)));
 }
 
-// The wall the ball has gone furthest through (outward normal), or null.
-let dnx = 0, dnz = 0, dover = 0;
-function deepest(a: Arena, x: number, z: number): boolean {
-  dover = 0;
-  if (a.radius > 0) {
-    const r = Math.hypot(x, z);
-    const over = r - (a.radius - BALL_R);
-    if (over > 0 && r > 1e-9) { dnx = x / r; dnz = z / r; dover = over; }
-    return dover > 0;
-  }
-  for (const w of a.walls) {
-    const over = w.nx * x + w.nz * z - (w.d - BALL_R);
-    if (over > dover) { dover = over; dnx = w.nx; dnz = w.nz; }
-  }
-  return dover > 0;
-}
-
 /** Side walls: reflect off whichever wall(s) the ball crossed. e = 1 for a perfect bounce. */
 function walls(b: BallKin, e: number, cb?: BounceFn) {
   const a = arenaOf(b.ar);
-  for (let pass = 0; pass < 4 && deepest(a, b.x, b.z); pass++) {
-    const nx = dnx, nz = dnz, over = dover;
-    b.x -= (1 + e) * over * nx;
-    b.z -= (1 + e) * over * nz;
-    const vn = b.vx * nx + b.vz * nz;
-    if (vn > 0) { b.vx -= (1 + e) * vn * nx; b.vz -= (1 + e) * vn * nz; }
+  for (let pass = 0; pass < 4; pass++) {
+    const w = deepestPenetration(a, b.x, b.z, BALL_R);
+    if (!w) return;
+    b.x -= (1 + e) * w.over * w.nx;
+    b.z -= (1 + e) * w.over * w.nz;
+    const vn = b.vx * w.nx + b.vz * w.nz;
+    if (vn > 0) { b.vx -= (1 + e) * vn * w.nx; b.vz -= (1 + e) * vn * w.nz; }
     b.cv = 0; b.ct = 0; // spin dies on contact
-    if (cb && (e === 1 || vn > 2)) cb(-nx, 0, -nz, b.x, b.y, b.z, Math.abs(vn));
+    if (cb && (e === 1 || vn > 2)) cb(-w.nx, 0, -w.nz, b.x, b.y, b.z, Math.abs(vn));
   }
   // Absurd speed for one step: clamp rather than loop.
-  if (deepest(a, b.x, b.z)) constrain(a, b, BALL_R);
+  constrain(a, b, BALL_R);
 }
 
 function floorCeilLine(b: BallKin, cb?: BounceFn) {

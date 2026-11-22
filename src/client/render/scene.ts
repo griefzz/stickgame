@@ -4,7 +4,7 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { HX, HY, HZ, SLOTS } from "../../shared/constants";
-import { ARENAS, arenaOf, type Arena } from "../../shared/arena";
+import { ARENAS, arenaOf, standOutline, type Arena } from "../../shared/arena";
 
 export const TAU = Math.PI * 2;
 export const v3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
@@ -347,14 +347,15 @@ export function setArena(index: number) {
   const postEvery = a.radius > 0 ? 6 : 1;
   a.verts.forEach(([x, z], i) => { if (i % postEvery === 0) tube(x, 0, z, x, HY, z, vert, 0.07); });
 
-  // Crowd stands: five tiers behind every wall that doesn't face the camera.
+  // Crowd stands: five tiers behind every wall that doesn't face the camera (spiky arenas get a ring).
+  const so = standOutline(a);
   crowd.spots = [];
   const u = 1.7;
   const tiers: { cx: number; cz: number; len: number; rot: number; h: number }[] = [];
   for (let l = 0; l < 5; l++) {
     const c = 3.6 + l * 1.7, h = 0.7 + l * 1.15;
-    const ov = insetVerts(a, -c);
-    a.walls.forEach((w, i) => {
+    const ov = insetVerts(so, -c);
+    so.walls.forEach((w, i) => {
       if (w.nz > 0.35) return;
       const [x0, z0] = ov[i], [x1, z1] = ov[(i + 1) % ov.length];
       const len = Math.hypot(x1 - x0, z1 - z0);
