@@ -47,19 +47,19 @@ export const COUNTDOWN = 3;
 export const GAMEOVER_DELAY = 2.2;
 
 export const PLAYER = {
-  speed: 11,
-  accelGround: 120,
-  accelAir: 42,
+  speed: 12.1,           // horizontal movement is 10% up on the first tuning (11 m/s run)
+  accelGround: 132,
+  accelAir: 46,
   gravity: 34,
   jumpV: 13.6,
   airJumps: 1,           // double jump: one extra jump before landing
   airJumpV: 12.4,
   wallJumps: 3,          // wall jumps allowed before landing (each restores the air jump and dash)
   wallJumpV: 13,
-  wallKick: 9.5,         // speed away from the wall
+  wallKick: 10.5,        // speed away from the wall
   wallReach: 0.15,       // how close to a wall counts as touching it
   wallSlide: 4.5,        // max fall speed while pushing into a wall
-  dashSpeed: 24,         // air dash: one per airtime
+  dashSpeed: 26.4,       // air dash: one per airtime
   dashTicks: 10,         // ~0.17 s of flat, gravity-free flight
   lowJumpMul: 1.9,       // extra gravity while rising with jump released
   radius: 0.45,          // hurtbox capsule radius
