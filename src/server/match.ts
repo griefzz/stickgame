@@ -11,6 +11,7 @@ import {
   PF_INVULN, PF_OUT, PH_COUNTDOWN, PH_OVER, PH_PLAY, encodeP, type RosterEntry,
 } from "../shared/protocol";
 import { Bot } from "./bot";
+import { ARENAS, arenaOf, randomPoint } from "../shared/arena";
 
 export type Entrant = { conn: Conn | null; name: string; bot: boolean; w: number };
 
@@ -93,9 +94,11 @@ export class Match {
   /** Called after a connection leaves this match (quit, kicked or disconnected). */
   onConnRemoved: (c: Conn) => void = () => {};
   roomCode: string | null;
+  arena: number;
 
-  constructor(entrants: Entrant[], practice: boolean, onEnd: (m: Match) => void, roomCode: string | null = null) {
+  constructor(entrants: Entrant[], practice: boolean, onEnd: (m: Match) => void, roomCode: string | null = null, arena = 0) {
     this.roomCode = roomCode;
+    this.arena = ARENAS[arena] ? arena : 0;
     this.practice = practice;
     this.onEnd = onEnd;
     this.cdEnd = this.t + COUNTDOWN + 0.6;
@@ -110,7 +113,7 @@ export class Match {
       const w = Number.isInteger(e.w) && WEAPONS[e.w] ? e.w : 0;
       const s: Slot = {
         idx: i, name: e.name, conn: e.conn, bot: e.bot ? new Bot(i) : null,
-        p: newPState(sp.x, sp.z, w), alive: true, stocks: STOCKS, out: false, gone: false, frozen: false,
+        p: newPState(sp.x, sp.z, w, this.arena), alive: true, stocks: STOCKS, out: false, gone: false, frozen: false,
         invulnUntil: 0, elim: 0, swing: null, lastSeq: 0, tokens: 20, tokenT: this.t,
         lastInput: this.t, lastActive: this.t, weapon: w, held: false,
       };
@@ -118,13 +121,13 @@ export class Match {
       if (e.conn) { e.conn.match = this; e.conn.slot = i; e.conn.state = "match"; }
     }
     this.ball = {
-      st: BS_NONE, k: { x: BALL_SPAWN.x, y: BALL_SPAWN.y, z: BALL_SPAWN.z, vx: 0, vy: 0, vz: 0, lob: false, cv: 0, ct: 0 },
+      st: BS_NONE, k: { x: BALL_SPAWN.x, y: BALL_SPAWN.y, z: BALL_SPAWN.z, vx: 0, vy: 0, vz: 0, lob: false, cv: 0, ct: 0, ar: this.arena },
       owner: -1, hitter: -1, speed: SPEED_NEUTRAL, hits: 0, epoch: 0, t1: 0, bunt: false, perfect: false, charge: 0, chargeBase: 0, pend: null,
     };
     const roster: (RosterEntry | null)[] = this.slots.map((s) => (s ? { n: s.name, b: s.bot ? 1 : 0, w: s.weapon } : null));
     for (const s of this.slots) {
       if (s?.conn) {
-        s.conn.send(JSON.stringify({ t: "go", slot: s.idx, roster, st: q3(this.t), cdEnd: q3(this.cdEnd), practice: practice ? 1 : 0, rm: roomCode }));
+        s.conn.send(JSON.stringify({ t: "go", slot: s.idx, roster, st: q3(this.t), cdEnd: q3(this.cdEnd), practice: practice ? 1 : 0, rm: roomCode, ar: this.arena }));
       }
     }
     this.after(this.cdEnd - this.t, () => {
@@ -350,12 +353,12 @@ export class Match {
     if (this.phase !== PH_PLAY || v.gone || v.stocks <= 0) return;
     let best = { x: 0, z: 0 }, bestD = -1;
     for (let i = 0; i < 16; i++) {
-      const x = (Math.random() * 2 - 1) * (HX - 2.5), z = (Math.random() * 2 - 1) * (HZ - 2.5);
+      const { x, z } = randomPoint(arenaOf(this.arena), 2.5);
       let d = 99;
       for (const o of this.slots) if (o && o !== v && o.alive) d = Math.min(d, Math.hypot(x - o.p.x, z - o.p.z));
       if (d > bestD) { bestD = d; best = { x, z }; }
     }
-    v.p = newPState(best.x, best.z, v.weapon);
+    v.p = newPState(best.x, best.z, v.weapon, this.arena);
     v.alive = true;
     v.frozen = false;
     v.swing = null;

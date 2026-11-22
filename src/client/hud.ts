@@ -186,3 +186,17 @@ export function hudUpdate(dt: number, b: HudBall, players: HudPlayer[]) {
     t.style.transform = `translate(${s.x.toFixed(1)}px, ${s.y.toFixed(1)}px) translate(-50%, -100%)`;
   });
 }
+
+const specEl = document.getElementById("spectate")!;
+let specKey = "";
+/** "You're spectating" strip with the director-camera toggle hint. */
+export function spectateHint(on: boolean, director: boolean) {
+  const key = on ? (director ? "d" : "a") : "";
+  if (key === specKey) return;
+  specKey = key;
+  specEl.hidden = !on;
+  if (on) {
+    specEl.innerHTML = `Spectating · director camera <b>${director ? "on" : "off"}</b> · ` +
+      `<span class="kb-only">press <b>C</b></span><span class="pad-only">press <b>Y</b></span> to switch`;
+  }
+}

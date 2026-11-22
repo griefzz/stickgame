@@ -101,14 +101,14 @@ dots.frustumCulled = false;
 scene.add(dots);
 
 const kin: BallKin = newKin();
-export function setTelegraph(on: boolean, from?: { x: number; y: number; z: number }, dir?: { x: number; y: number; z: number; cv?: number; ct?: number }, color?: THREE.Color, strength = 1, rt = 0) {
+export function setTelegraph(on: boolean, from?: { x: number; y: number; z: number }, dir?: { x: number; y: number; z: number; cv?: number; ct?: number; ar?: number }, color?: THREE.Color, strength = 1, rt = 0) {
   if (!on || !from || !dir || !color) { dGeo.setDrawRange(0, 0); return; }
   dMat.uniforms.uColor.value.copy(color);
   dMat.uniforms.uScale.value = (window.innerHeight * 0.5) / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * Math.min(window.devicePixelRatio || 1, 1.75);
   kin.x = from.x; kin.y = from.y; kin.z = from.z;
   const step = 0.5;
   kin.vx = dir.x * step; kin.vy = dir.y * step; kin.vz = dir.z * step;
-  kin.lob = false; kin.cv = dir.cv ?? 0; kin.ct = dir.ct ?? 0; // curve shots draw a bending line
+  kin.lob = false; kin.cv = dir.cv ?? 0; kin.ct = dir.ct ?? 0; kin.ar = dir.ar ?? 0; // curve shots draw a bending line
   let bounces = 0;
   const flow = (rt * 6) % 1;
   // Start the dots a little ahead so they flow outward.

@@ -1,4 +1,5 @@
-import { DT, HX, HZ, PLAYER, SWING, weaponOf } from "./constants";
+import { DT, PLAYER, SWING, weaponOf } from "./constants";
+import { arenaOf, constrain, wallContact } from "./arena";
 
 // Everything the client needs to predict its own player, and the server needs
 // to simulate it. Kept flat so it serialises to a short array.
@@ -17,6 +18,7 @@ export interface PState {
   dc: number;  // air dash used this airtime 0/1
   wj: number;  // wall jumps used this airtime
   wp: number;  // weapon index (fixed for the match; not sent in snapshots)
+  ar: number;  // arena index (fixed for the match; not sent in snapshots)
 }
 
 // Buttons bitmask carried by each input.
@@ -38,8 +40,8 @@ export interface Input {
   t: number;   // client's estimate of server time when sampled
 }
 
-export function newPState(x: number, z: number, wp = 0): PState {
-  return { x, y: 0, z, vx: 0, vy: 0, vz: 0, f: Math.atan2(-x, -z), ay: 0, g: 1, cd: 0, sa: -1, sk: 0, aj: 0, ax: 0, ds: 0, dc: 0, wj: 0, wp };
+export function newPState(x: number, z: number, wp = 0, ar = 0): PState {
+  return { x, y: 0, z, vx: 0, vy: 0, vz: 0, f: Math.atan2(-x, -z), ay: 0, g: 1, cd: 0, sa: -1, sk: 0, aj: 0, ax: 0, ds: 0, dc: 0, wj: 0, wp, ar };
 }
 
 export function copyP(dst: PState, src: PState): PState {
@@ -47,7 +49,7 @@ export function copyP(dst: PState, src: PState): PState {
   dst.vx = src.vx; dst.vy = src.vy; dst.vz = src.vz;
   dst.f = src.f; dst.ay = src.ay; dst.g = src.g;
   dst.cd = src.cd; dst.sa = src.sa; dst.sk = src.sk; dst.aj = src.aj;
-  dst.ax = src.ax; dst.ds = src.ds; dst.dc = src.dc; dst.wj = src.wj; dst.wp = src.wp;
+  dst.ax = src.ax; dst.ds = src.ds; dst.dc = src.dc; dst.wj = src.wj; dst.wp = src.wp; dst.ar = src.ar;
   return dst;
 }
 
@@ -60,8 +62,6 @@ export function approachAngle(a: number, b: number, maxStep: number): number {
   return a + d;
 }
 
-const XMAX = HX - PLAYER.wallMargin;
-const ZMAX = HZ - PLAYER.wallMargin;
 
 export const q3 = (v: number) => Math.round(v * 1000) / 1000;
 
@@ -93,9 +93,9 @@ export function stepPlayer(p: PState, inp: Input, frozen: boolean): number {
     return 0;
   }
 
-  // Walls the player is touching: +1 / -1 on that axis, 0 for none.
-  const wx = p.x >= XMAX - PLAYER.wallReach ? 1 : p.x <= -XMAX + PLAYER.wallReach ? -1 : 0;
-  const wz = p.z >= ZMAX - PLAYER.wallReach ? 1 : p.z <= -ZMAX + PLAYER.wallReach ? -1 : 0;
+  // The wall the player is touching, if any (for wall jumps and wall slides).
+  const arena = arenaOf(p.ar);
+  const wall = wallContact(arena, p.x, p.z, PLAYER.wallMargin, PLAYER.wallReach); // outward normal, or null
 
   if (p.ds > 0) {
     // Mid-dash: hold the dash velocity, no gravity.
@@ -111,10 +111,11 @@ export function stepPlayer(p: PState, inp: Input, frozen: boolean): number {
 
     if (inp.b & B_JUMP_P) {
       if (p.g) { p.vy = PLAYER.jumpV; p.g = 0; }
-      else if ((wx || wz) && p.wj < PLAYER.wallJumps) {
+      else if (wall && p.wj < PLAYER.wallJumps) {
         // Wall jump: kick away from the wall; restores the air jump and dash.
-        if (wx) p.vx = -wx * PLAYER.wallKick;
-        if (wz) p.vz = -wz * PLAYER.wallKick;
+        const vn = p.vx * wall.nx + p.vz * wall.nz;
+        p.vx -= (vn + PLAYER.wallKick) * wall.nx;
+        p.vz -= (vn + PLAYER.wallKick) * wall.nz;
         p.vy = PLAYER.wallJumpV;
         p.wj++; p.aj = 0; p.dc = 0;
       } else if (p.aj < PLAYER.airJumps) { p.vy = PLAYER.airJumpV; p.aj++; }
@@ -133,7 +134,7 @@ export function stepPlayer(p: PState, inp: Input, frozen: boolean): number {
       const grav = PLAYER.gravity * (rising && !(inp.b & B_JUMP) ? PLAYER.lowJumpMul : 1);
       p.vy -= grav * DT;
       // Wall slide: falling while pushing into a wall slows the fall.
-      if (!p.g && p.vy < -PLAYER.wallSlide && ((wx && mx * wx > 0.3) || (wz && mz * wz > 0.3))) p.vy = -PLAYER.wallSlide;
+      if (!p.g && p.vy < -PLAYER.wallSlide && wall && mx * wall.nx + mz * wall.nz > 0.3) p.vy = -PLAYER.wallSlide;
     }
   }
   p.y += p.vy * DT;
@@ -141,10 +142,7 @@ export function stepPlayer(p: PState, inp: Input, frozen: boolean): number {
 
   p.x += p.vx * DT;
   p.z += p.vz * DT;
-  if (p.x > XMAX) { p.x = XMAX; if (p.vx > 0) p.vx = 0; }
-  else if (p.x < -XMAX) { p.x = -XMAX; if (p.vx < 0) p.vx = 0; }
-  if (p.z > ZMAX) { p.z = ZMAX; if (p.vz > 0) p.vz = 0; }
-  else if (p.z < -ZMAX) { p.z = -ZMAX; if (p.vz < 0) p.vz = 0; }
+  constrain(arena, p, PLAYER.wallMargin);
 
   if ((inp.b & (B_SWING | B_BUNT)) && p.cd <= 0) {
     const bunt = !(inp.b & B_SWING);

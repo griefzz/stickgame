@@ -6,7 +6,7 @@ import { gamepadName, lastDevice, onUi, pollPads, setGameActive } from "./input"
 import { Menu } from "./menu";
 import { Net } from "./net";
 import { setTelegraph, updateBall } from "./render/ball";
-import { CAM_LABEL, CAM_MODES, camMode, setCamMode, type CamMode } from "./render/camera";
+import { directorPref, setDirectorPref } from "./render/camera";
 import { updateFx } from "./render/fx";
 import { WHITE, camera, render, updateCrowd, updateWalls } from "./render/scene";
 
@@ -30,12 +30,7 @@ function setRoomParam(code: string | null) {
     history.replaceState(null, "", u.toString());
   } catch {}
 }
-
-try {
-  const c = localStorage.getItem("oc.cam") as CamMode | null;
-  if (c && CAM_MODES.includes(c)) setCamMode(c);
-} catch {}
-menu.setCamLabel(CAM_LABEL[camMode()]);
+menu.setCamLabel(directorPref() ? "Director" : "Arena");
 menu.setSoundLabel(isMuted());
 
 net.helloName = menu.name();
@@ -102,7 +97,7 @@ net.connect();
 function startMatch(m: Extract<ServerMsg, { t: "go" }>) {
   if (match) match.dispose();
   const practice = !!m.practice;
-  const cm = new ClientMatch(net, m.slot, m.roster, m.cdEnd, practice, m.rm);
+  const cm = new ClientMatch(net, m.slot, m.roster, m.cdEnd, practice, m.rm, m.ar ?? 0);
   cm.onOver = (rank, w) => {
     setGameActive(false);
     menu.showResults(rank, w, m.roster, m.slot, practice);
@@ -131,13 +126,6 @@ function setPaused(p: boolean) {
   menu.show(p ? "pause" : "none");
 }
 
-function cycleCam() {
-  const i = CAM_MODES.indexOf(camMode());
-  const next = CAM_MODES[(i + 1) % CAM_MODES.length];
-  setCamMode(next);
-  try { localStorage.setItem("oc.cam", next); } catch {}
-  menu.setCamLabel(CAM_LABEL[next]);
-}
 
 // Full screen: browsers only allow it from a click or key press (controller buttons may not
 // count), so if it's refused we say how to do it instead.
@@ -161,6 +149,13 @@ function blocked() {
 document.addEventListener("fullscreenchange", () => menu.setFullLabel(isFullscreen()));
 document.addEventListener("webkitfullscreenchange", () => menu.setFullLabel(isFullscreen()));
 
+// Spectators can switch to the director camera; players always use the arena camera.
+function toggleDirector() {
+  setDirectorPref(!directorPref());
+  menu.setCamLabel(directorPref() ? "Director" : "Arena");
+  sfx.ui();
+}
+
 function toggleMute() {
   setMuted(!isMuted());
   menu.setSoundLabel(isMuted());
@@ -179,7 +174,7 @@ menu.onPractice = () => { unlockAudio(); net.send({ t: "pr" }); };
 menu.onCancel = () => { net.send({ t: "x" }); menu.show("title"); };
 menu.onResume = () => setPaused(false);
 menu.onLeave = () => { net.send({ t: "lv" }); endMatch(); menu.show(menu.room ? "room" : "title"); };
-menu.onCam = cycleCam;
+menu.onCam = toggleDirector;
 menu.onMute = toggleMute;
 menu.onFull = toggleFullscreen;
 menu.onAgain = () => {
@@ -208,10 +203,11 @@ menu.onRoomJoin = (code) => { unlockAudio(); net.send({ t: "rj", code }); };
 menu.onRoomLeave = leaveRoom;
 menu.onRoomStart = () => { unlockAudio(); net.send({ t: "rs" }); };
 menu.onRoomBots = (on) => net.send({ t: "rb", on: on ? 1 : 0 });
+menu.onRoomArena = (a) => net.send({ t: "ra", a });
 
 onUi((e) => {
   unlockAudio();
-  if (e === "cam") { cycleCam(); return; }
+  if (e === "cam") { toggleDirector(); return; }
   if (e === "mute") { toggleMute(); return; }
   if (e === "full") { toggleFullscreen(); return; }
   if (match && !match.over && menu.screen === "none") {

@@ -40,6 +40,7 @@
   <div id="tags"></div>
   <div id="callouts"></div>
   <div class="countdown" id="countdown" hidden></div>
+  <div class="spectate" id="spectate" hidden></div>
   <div class="banner" id="banner"><div class="big" id="bannerBig"></div><div class="small" id="bannerSmall"></div></div>
 </div>
 
@@ -123,7 +124,8 @@
               <dt><kbd>K</kbd> <kbd>R-Click</kbd></dt><dd>Bunt</dd>
               <dt><kbd>R</kbd> / <kbd>F</kbd></dt><dd>Aim high / low</dd>
               <dt><kbd>Q</kbd> / <kbd>E</kbd></dt><dd>Curve left / right</dd>
-              <dt><kbd>C</kbd> <kbd>M</kbd> <kbd>Esc</kbd></dt><dd>Camera, mute, menu</dd>
+              <dt><kbd>M</kbd> <kbd>Esc</kbd></dt><dd>Mute, menu</dd>
+              <dt><kbd>C</kbd></dt><dd>Director camera when spectating</dd>
               <dt><kbd>Alt</kbd>+<kbd>Enter</kbd></dt><dd>Full screen</dd>
             </dl>
           </div>
@@ -136,7 +138,8 @@
               <dt><kbd>X</kbd> <kbd>RB</kbd> <kbd>RT</kbd></dt><dd>Swing · hold to charge</dd>
               <dt><kbd>B</kbd> <kbd>LT</kbd></dt><dd>Bunt</dd>
               <dt><kbd>R-Stick</kbd></dt><dd>Aim high / low · curve</dd>
-              <dt><kbd>Y</kbd> <kbd>Back</kbd> <kbd>Start</kbd></dt><dd>Camera, mute, menu</dd>
+              <dt><kbd>Back</kbd> <kbd>Start</kbd></dt><dd>Mute, menu</dd>
+              <dt><kbd>Y</kbd></dt><dd>Director camera when spectating</dd>
             </dl>
           </div>
         </div>
@@ -171,6 +174,16 @@
       </div>
       <ol class="qnames" id="roomNames"></ol>
       <p class="qinfo" id="roomInfo"></p>
+      <button type="button" class="weaponpick" id="btnRoomArena" data-nav aria-label="Arena">
+        <span class="arrow" id="roomArenaPrev" aria-hidden="true">‹</span>
+        <span class="wbody"><span class="wname" id="roomArenaName">Random arena</span><span class="wtrait" id="roomArenaHint">The host picks the arena.</span></span>
+        <span class="arrow" id="roomArenaNext" aria-hidden="true">›</span>
+      </button>
+      <button type="button" class="weaponpick" id="btnRoomWeapon" data-nav aria-label="Your weapon">
+        <span class="arrow" id="roomWeaponPrev" aria-hidden="true">‹</span>
+        <span class="wbody"><span class="wname" id="roomWeaponName"></span><span class="wtrait" id="roomWeaponTrait"></span></span>
+        <span class="arrow" id="roomWeaponNext" aria-hidden="true">›</span>
+      </button>
       <button type="button" class="toggle" id="btnRoomBots" role="switch" aria-checked="false" data-nav>
         <span class="sw" aria-hidden="true"></span>
         <span class="tl">Fill empty seats with bots</span>
@@ -186,7 +199,7 @@
     <div class="panel pause">
       <div class="eyebrow">Paused · the match keeps running</div>
       <button type="button" class="btn primary" id="btnResume" data-nav><span>Resume</span><span class="glyph"><i class="kb-only">Esc</i><i class="pad-only">Start</i></span></button>
-      <button type="button" class="btn" id="btnCam" data-nav><span>Camera</span><b>Arena</b></button>
+      <button type="button" class="btn" id="btnCam" data-nav><span>Spectator camera</span><b>Arena</b></button>
       <button type="button" class="btn" id="btnSound" data-nav><span>Sound</span><b>On</b></button>
       <button type="button" class="btn" id="btnFull" data-nav><span>Full screen</span><b>Off</b></button>
       <button type="button" class="btn danger" id="btnLeave" data-nav><span>Leave match</span></button>

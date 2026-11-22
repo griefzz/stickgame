@@ -2,7 +2,7 @@
 import type { PState } from "./player";
 import { q3 } from "./player";
 
-export const PROTOCOL = 4;
+export const PROTOCOL = 5;
 
 // Ball states
 export const BS_NONE = 0;
@@ -39,7 +39,8 @@ export type ClientMsg =
   | { t: "rj"; code: string }         // join a room by code
   | { t: "rl" }                       // leave the room
   | { t: "rb"; on: 0 | 1 }            // host: let bots fill empty seats
-  | { t: "rs" };                      // host: start the match
+  | { t: "rs" }                       // host: start the match
+  | { t: "ra"; a: number };           // host: arena (-1 = random)
 
 export interface RosterEntry { n: string; b: 0 | 1; w: number } // name, bot, weapon
 
@@ -51,6 +52,7 @@ export interface RoomState {
   bots: 0 | 1;                         // bots fill empty seats
   max: number;
   live: 0 | 1;                         // a match is running
+  arena: number;                       // host's arena choice, -1 = random
   players: { n: string; h: 0 | 1; y: 0 | 1; p: 0 | 1 }[]; // name, host, you, playing now
 }
 
@@ -58,7 +60,7 @@ export type ServerMsg =
   | { t: "w"; id: number; v: number; size: number; bf: number; b: string; ver: string }
   | { t: "st"; on: number; q: number; m: number; b: string }
   | { t: "qs"; n: number; min: number; max: number; sIn: number; names: string[]; bf: number; bo: number }
-  | { t: "go"; slot: number; roster: (RosterEntry | null)[]; st: number; cdEnd: number; practice: 0 | 1; rm: string | null }
+  | { t: "go"; slot: number; roster: (RosterEntry | null)[]; st: number; cdEnd: number; practice: 0 | 1; rm: string | null; ar: number }
   | { t: "s"; a: number; st: number; ph: number; p: (number[] | null)[]; b: number[] }
   | { t: "e"; k: string; st: number; [key: string]: unknown }
   | { t: "po"; c: number; s: number }

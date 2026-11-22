@@ -6,6 +6,7 @@ import { B_BUNT, B_DASH, B_JUMP, B_JUMP_P, B_SWING, B_SWING_HELD, hitCentre, typ
 import { shotDir } from "../shared/shot";
 import { BS_FLIGHT, BS_HITSTOP } from "../shared/protocol";
 import type { Match, Slot } from "./match";
+import { arenaOf, randomPoint, wallContact } from "../shared/arena";
 
 const HORIZON = 78; // ticks of ball prediction (1.3 s)
 
@@ -43,6 +44,7 @@ export class Bot {
   aimY = 0;
   aimX = 0;
   chargeFor = 0;
+  nextDash = 0;
   wander: { x: number; z: number } | null = null;
   wanderUntil = 0;
   hesitateUntil = 0;
@@ -114,11 +116,15 @@ export class Bot {
           if (y > 5.0) continue;
           const tt = (i + 1) * DT;
           const need = Math.hypot(x - p.x, z - p.z) - 1.3;
-          if (need <= PLAYER.speed * tt * 0.85) { sx = x; sz = z; sy = y; tau = tt; break; }
+          if (need <= this.moveSpeed() * tt * 0.85) { sx = x; sz = z; sy = y; tau = tt; break; }
         }
         if (sx === sx) {
           const dx = sx - p.x, dz = sz - p.z, d = Math.hypot(dx, dz);
-          if (d > 0.9) { mx = dx / d; mz = dz / d; }
+          if (d > 0.9) {
+            mx = dx / d; mz = dz / d;
+            // Far from the ball with time to spare: wavedash there.
+            if (d > 3.5 && tau > 0.22) btn |= this.wavedash(p, t);
+          }
           else {
             // In position: turn toward an opponent so the shot goes somewhere useful.
             const o = this.pickTarget(m, s);
@@ -137,11 +143,20 @@ export class Bot {
           if (!p.g && p.vy > 0) btn |= B_JUMP;
           // Ball still above us near the top of the first jump: spend the air jump.
           if (!p.g && p.aj < PLAYER.airJumps && p.vy < 1.5 && sy - SWING.hitUp - p.y > 1.2 && tau < 0.6) btn |= B_JUMP_P | B_JUMP;
+          // Ball above us and a wall at our back: kick off it for more height.
+          if (!p.g && p.wj < PLAYER.wallJumps && p.vy < 4 && sy - SWING.hitUp - p.y > 0.8 &&
+              wallContact(arenaOf(m.arena), p.x, p.z, PLAYER.wallMargin, PLAYER.wallReach)) btn |= B_JUMP_P | B_JUMP;
           // Airborne and still well short of the ball: air dash toward it.
           if (!p.g && !p.dc && d > 3 && tau < 0.6) btn |= B_DASH;
         }
         if (tHit >= 0 && p.cd <= 0) {
           const fire = this.miss ? tHit <= 0.34 && tHit > 0.24 : tHit <= this.lead;
+          // Knows it mistimed the swing: try to dash out of the ball's path instead.
+          if (this.miss && harmful && tHit < 0.3 && tHit > 0.04 && Math.random() < this.skill * 0.5) {
+            const vh = Math.hypot(b.k.vx, b.k.vz) || 1, side = this.idx % 2 ? 1 : -1;
+            mx = (-b.k.vz / vh) * side; mz = (b.k.vx / vh) * side;
+            btn |= this.wavedash(p, t, true);
+          }
           if (fire) btn |= this.bunt ? B_BUNT : B_SWING;
         }
         return out();
@@ -163,6 +178,7 @@ export class Bot {
         if (along > 0 && perp < 2.6 && Math.random() < 0.4 + 0.6 * this.skill) {
           const sx = perp > 0.01 ? perpX / perp : -uz, sz = perp > 0.01 ? perpZ / perp : ux;
           mx = sx; mz = sz;
+          btn |= this.wavedash(p, t, true);
           return out();
         }
       }
@@ -171,7 +187,12 @@ export class Bot {
     this.doWander(m, s, t);
     if (this.wander) {
       const dx = this.wander.x - p.x, dz = this.wander.z - p.z, d = Math.hypot(dx, dz);
-      if (d > 0.4) { const k = Math.min(0.75, d * 0.3); mx = (dx / d) * k; mz = (dz / d) * k; }
+      if (d > 0.4) {
+        const k = Math.min(0.75, d * 0.3);
+        mx = (dx / d) * k; mz = (dz / d) * k;
+        // Long repositioning moves: wavedash (full stick so the dash goes where we want).
+        if (d > 5 && Math.random() < 0.06 * this.skill) { mx = dx / d; mz = dz / d; btn |= this.wavedash(p, t); }
+      }
     }
     return out();
   }
@@ -189,7 +210,7 @@ export class Bot {
     if (this.wander && t < this.wanderUntil) return;
     let best: { x: number; z: number } | null = null, bestScore = -1;
     for (let i = 0; i < 8; i++) {
-      const x = rnd(-HX + 2, HX - 2), z = rnd(-HZ + 2, HZ - 2);
+      const { x, z } = randomPoint(arenaOf(m.arena), 2);
       if (Math.hypot(x - s.p.x, z - s.p.z) > 9) continue;
       let r = 99;
       for (const o of m.slots) if (o && o !== s && o.alive) r = Math.min(r, Math.hypot(x - o.p.x, z - o.p.z));
@@ -199,5 +220,22 @@ export class Bot {
     }
     this.wander = best ?? { x: s.p.x, z: s.p.z };
     this.wanderUntil = t + rnd(1.2, 2.8);
+  }
+
+  /** Effective chase speed: good bots plan around wavedashing. */
+  moveSpeed(): number {
+    return PLAYER.speed * (1.2 + 0.8 * this.skill);
+  }
+
+  /**
+   * Jump + dash on the same tick: the dash flattens the jump into a fast skid along the
+   * floor, and touching down refunds the dash, so it chains. Returns the buttons to press.
+   */
+  wavedash(p: { g: number; dc: number; ds: number }, t: number, urgent = false): number {
+    if (p.ds > 0 || t < this.nextDash) return 0;
+    if (!urgent && Math.random() > 0.35 + 0.65 * this.skill) return 0;
+    this.nextDash = t + (urgent ? 0.05 : 0.18 + 0.15 * (1 - this.skill));
+    if (p.g) return B_JUMP_P | B_DASH;
+    return p.dc ? 0 : B_DASH;
   }
 }

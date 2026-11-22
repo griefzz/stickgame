@@ -6,6 +6,7 @@ import type { ServerWebSocket } from "bun";
 import { DT, MAX_PLAYERS, WEAPONS } from "../shared/constants";
 import { PROTOCOL, cleanName } from "../shared/protocol";
 import { Match, type Conn, type Entrant } from "./match";
+import { ARENAS, arenaIndex } from "../shared/arena";
 
 const env = (k: string, d: string) => process.env[k] ?? d;
 const PORT = +env("PORT", "8787");
@@ -19,6 +20,12 @@ const FILL_WAIT = +env("FILL_WAIT", "12");          // seconds to wait for a ful
 // player in that lobby has "Fill empty seats with bots" switched on. 0 = never.
 const BOT_FILL_TO = (() => { const v = clampInt(+env("BOT_FILL_TO", String(MATCH_SIZE)), 0, MATCH_SIZE, MATCH_SIZE); return v < 2 ? 0 : v; })();
 const MAX_CONNS = +env("MAX_CONNS", "400");
+// Arenas used by queue and practice matches, picked at random each match (rooms pick their own).
+const ARENA_POOL = (() => {
+  const p = env("ARENAS", "box,octagon,pentagon,circle").split(",").map((s) => arenaIndex(s.trim().toLowerCase())).filter((i) => i >= 0);
+  return p.length ? p : [0];
+})();
+const pickArena = () => ARENA_POOL[Math.floor(Math.random() * ARENA_POOL.length)];
 const INDEX = env("INDEX_HTML", join(import.meta.dir, "index.html"));
 
 interface Data { conn: Conn }
@@ -36,7 +43,7 @@ function randomBots(n: number, taken: string[]): string[] {
   return pool.slice(0, n).map((b) => b + " (BOT)");
 }
 
-function startMatch(list: Conn[], practice: boolean, opts: { bots?: number; room?: Room } = {}): Match | null {
+function startMatch(list: Conn[], practice: boolean, opts: { bots?: number; room?: Room; arena?: number } = {}): Match | null {
   const players = [...new Set(list)].filter((c) => conns.has(c) && !c.match);
   if (!players.length) return null;
   for (const c of players) unqueue(c);
@@ -52,7 +59,7 @@ function startMatch(list: Conn[], practice: boolean, opts: { bots?: number; room
       for (const c of room.members) if (!c.match) c.state = "room";
       if (rooms.has(room.code)) sendRoom(room);
     }
-  }, room?.code ?? null);
+  }, room?.code ?? null, opts.arena ?? pickArena());
   // Someone leaving a room's match (quit, AFK, disconnect) goes back to the room.
   m.onConnRemoved = (c) => {
     if (!c.room || !conns.has(c)) return;
@@ -67,7 +74,7 @@ function startMatch(list: Conn[], practice: boolean, opts: { bots?: number; room
 
 // ---------------------------------------------------------------- private rooms
 
-interface Room { code: string; members: Conn[]; host: Conn; bots: boolean; match: Match | null }
+interface Room { code: string; members: Conn[]; host: Conn; bots: boolean; match: Match | null; arena: number } // arena -1 = random
 const rooms = new Map<string, Room>();
 const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ"; // no I or O, so codes read cleanly
 
@@ -81,7 +88,7 @@ function newRoomCode(): string {
 
 function roomMsg(r: Room, c: Conn): string {
   return JSON.stringify({
-    t: "rm", code: r.code, host: r.host === c ? 1 : 0, bots: r.bots ? 1 : 0, max: MAX_PLAYERS, live: r.match ? 1 : 0,
+    t: "rm", code: r.code, host: r.host === c ? 1 : 0, bots: r.bots ? 1 : 0, max: MAX_PLAYERS, live: r.match ? 1 : 0, arena: r.arena,
     players: r.members.map((m) => ({ n: m.name, h: m === r.host ? 1 : 0, y: m === c ? 1 : 0, p: m.match ? 1 : 0 })),
   });
 }
@@ -181,7 +188,7 @@ function onMessage(c: Conn, raw: string | Buffer) {
     case "rc": // create a private room
       if (c.state !== "menu" || c.match || c.room) return;
       {
-        const r: Room = { code: newRoomCode(), members: [c], host: c, bots: false, match: null };
+        const r: Room = { code: newRoomCode(), members: [c], host: c, bots: false, match: null, arena: -1 };
         rooms.set(r.code, r);
         c.room = r;
         c.state = "room";
@@ -215,12 +222,19 @@ function onMessage(c: Conn, raw: string | Buffer) {
       sendRoom(r);
       return;
     }
+    case "ra": { // host: pick the arena (-1 = random)
+      const r = c.room ? rooms.get(c.room.code) : undefined;
+      if (!r || r.host !== c || !Number.isInteger(m.a) || m.a < -1 || m.a >= ARENAS.length) return;
+      r.arena = m.a;
+      sendRoom(r);
+      return;
+    }
     case "rs": { // host: start the match
       const r = c.room ? rooms.get(c.room.code) : undefined;
       if (!r || r.host !== c || r.match) return;
       const humans = r.members.filter((x) => conns.has(x) && !x.match);
       if (humans.length < 2 && !r.bots) { roomError(c, "Need at least 2 players, or turn on bots"); return; }
-      r.match = startMatch(humans, false, { room: r, bots: r.bots ? MAX_PLAYERS - humans.length : 0 });
+      r.match = startMatch(humans, false, { room: r, bots: r.bots ? MAX_PLAYERS - humans.length : 0, arena: r.arena >= 0 ? r.arena : pickArena() });
       sendRoom(r);
       return;
     }
@@ -328,7 +342,7 @@ setInterval(() => {
 setInterval(matchmake, 250);
 setInterval(stats, 2000);
 
-log(`Overclock server on http://${HOST}:${server.port}  (ws path /ws, match size ${MATCH_SIZE}, min ${MIN_PLAYERS}, fill wait ${FILL_WAIT}s, bot fill ${BOT_FILL_TO ? "to " + BOT_FILL_TO : "off"})`);
+log(`Overclock server on http://${HOST}:${server.port}  (ws path /ws, arenas ${ARENA_POOL.map((i) => ARENAS[i].key).join("/")}, match size ${MATCH_SIZE}, min ${MIN_PLAYERS}, fill wait ${FILL_WAIT}s, bot fill ${BOT_FILL_TO ? "to " + BOT_FILL_TO : "off"})`);
 
 // Build ID and version of the client page currently on disk (re-read when the file or the
 // dist symlink changes), so idle players can reload into a fresh deploy and /health can

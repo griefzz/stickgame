@@ -51,8 +51,11 @@ check("leave match: back in the room", A.room?.code === code && A.last("end"), A
 await sleep(2500); // BOB alone in the match -> game over -> everyone back to the room
 check("match over: everyone back in the room, not live", B.last("e") && B.room?.live === 0 && A.room?.live === 0 && D.room?.live === 0, { live: B.room?.live });
 A.go = B.go = D.go = null;
+B.send({ t: "ra", a: 1 }); A.send({ t: "ra", a: 2 }); await sleep(300);
+check("arena: only the host can pick, everyone sees it", A.room.arena === 2 && D.room.arena === 2, { a: A.room.arena });
 A.send({ t: "rs" }); await sleep(400);
 check("rematch: all three in the next match", !!A.go && !!B.go && !!D.go && A.go.roster.filter(Boolean).length === 3);
+check("arena: the match uses the host's pick", A.go?.ar === 2 && B.go?.ar === 2, { ar: A.go?.ar });
 A.send({ t: "rl" }); await sleep(400);
 const newHost = [B, D].find((p) => p.room?.host === 1);
 check("host leaves: someone else becomes host", !!newHost && A.room === null, newHost?.name);

@@ -1,4 +1,5 @@
-import { BX0, BX1, BY0, BY1, BZ0, BZ1, LOB_GRAVITY } from "./constants";
+import { BALL_R, BY0, BY1, LOB_GRAVITY } from "./constants";
+import { arenaOf, constrain, type Arena } from "./arena";
 
 export interface BallKin {
   x: number; y: number; z: number;
@@ -6,14 +7,15 @@ export interface BallKin {
   lob: boolean; // true: gravity + lossy bounces (bunt arc); false: straight line, perfect reflection
   cv: number;   // curve: signed curvature of the horizontal path (1/radius); 0 = straight
   ct: number;   // turn budget left for the curve, radians; spin also dies on the first bounce
+  ar: number;   // arena index (walls come from the arena's shape)
 }
 
-export function newKin(): BallKin {
-  return { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, lob: false, cv: 0, ct: 0 };
+export function newKin(ar = 0): BallKin {
+  return { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, lob: false, cv: 0, ct: 0, ar };
 }
 
-/** axis: 0 x, 1 y, 2 z. side: -1 low wall (normal +), +1 high wall (normal -). */
-export type BounceFn = (axis: number, side: number, x: number, y: number, z: number, impact: number) => void;
+/** Called on every bounce with the surface's inward normal (the direction the ball leaves in). */
+export type BounceFn = (nx: number, ny: number, nz: number, x: number, y: number, z: number, impact: number) => void;
 
 export const SUBSTEP_LEN = 0.4;
 
@@ -22,51 +24,66 @@ export function substepsFor(b: BallKin, dt: number): number {
   return Math.max(1, Math.min(24, Math.ceil(d / SUBSTEP_LEN)));
 }
 
-// Fold a coordinate back into [lo, hi], mirroring velocity on each crossing.
-function foldLine(b: BallKin, axis: number, lo: number, hi: number, cb?: BounceFn) {
-  let guard = 0;
-  for (;;) {
-    const p = axis === 0 ? b.x : axis === 1 ? b.y : b.z;
-    let np: number, side: number;
-    if (p < lo) { np = 2 * lo - p; side = -1; }
-    else if (p > hi) { np = 2 * hi - p; side = 1; }
-    else return;
-    if (axis === 0) { b.x = np; b.vx = -b.vx; }
-    else if (axis === 1) { b.y = np; b.vy = -b.vy; }
-    else { b.z = np; b.vz = -b.vz; }
-    b.cv = 0; b.ct = 0; // spin dies on contact
-    if (cb) {
-      const v = axis === 0 ? b.vx : axis === 1 ? b.vy : b.vz;
-      cb(axis, side, b.x, b.y, b.z, Math.abs(v));
-    }
-    if (++guard > 8) {
-      // Absurd speed for one step; clamp rather than loop.
-      if (axis === 0) b.x = Math.min(hi, Math.max(lo, b.x));
-      else if (axis === 1) b.y = Math.min(hi, Math.max(lo, b.y));
-      else b.z = Math.min(hi, Math.max(lo, b.z));
-      return;
-    }
+// The wall the ball has gone furthest through (outward normal), or null.
+let dnx = 0, dnz = 0, dover = 0;
+function deepest(a: Arena, x: number, z: number): boolean {
+  dover = 0;
+  if (a.radius > 0) {
+    const r = Math.hypot(x, z);
+    const over = r - (a.radius - BALL_R);
+    if (over > 0 && r > 1e-9) { dnx = x / r; dnz = z / r; dover = over; }
+    return dover > 0;
   }
+  for (const w of a.walls) {
+    const over = w.nx * x + w.nz * z - (w.d - BALL_R);
+    if (over > dover) { dover = over; dnx = w.nx; dnz = w.nz; }
+  }
+  return dover > 0;
 }
 
-function lobAxis(b: BallKin, axis: number, lo: number, hi: number, e: number, cb?: BounceFn) {
-  const p = axis === 0 ? b.x : axis === 1 ? b.y : b.z;
-  const v = axis === 0 ? b.vx : axis === 1 ? b.vy : b.vz;
+/** Side walls: reflect off whichever wall(s) the ball crossed. e = 1 for a perfect bounce. */
+function walls(b: BallKin, e: number, cb?: BounceFn) {
+  const a = arenaOf(b.ar);
+  for (let pass = 0; pass < 4 && deepest(a, b.x, b.z); pass++) {
+    const nx = dnx, nz = dnz, over = dover;
+    b.x -= (1 + e) * over * nx;
+    b.z -= (1 + e) * over * nz;
+    const vn = b.vx * nx + b.vz * nz;
+    if (vn > 0) { b.vx -= (1 + e) * vn * nx; b.vz -= (1 + e) * vn * nz; }
+    b.cv = 0; b.ct = 0; // spin dies on contact
+    if (cb && (e === 1 || vn > 2)) cb(-nx, 0, -nz, b.x, b.y, b.z, Math.abs(vn));
+  }
+  // Absurd speed for one step: clamp rather than loop.
+  if (deepest(a, b.x, b.z)) constrain(a, b, BALL_R);
+}
+
+function floorCeilLine(b: BallKin, cb?: BounceFn) {
+  for (let guard = 0; guard < 8; guard++) {
+    let side: number;
+    if (b.y < BY0) { b.y = 2 * BY0 - b.y; side = -1; }
+    else if (b.y > BY1) { b.y = 2 * BY1 - b.y; side = 1; }
+    else return;
+    b.vy = -b.vy;
+    b.cv = 0; b.ct = 0;
+    if (cb) cb(0, -side, 0, b.x, b.y, b.z, Math.abs(b.vy));
+  }
+  b.y = Math.min(BY1, Math.max(BY0, b.y));
+}
+
+function floorCeilLob(b: BallKin, cb?: BounceFn) {
+  const p = b.y, v = b.vy;
   let side = 0, np = p;
-  if (p < lo) { np = lo + (lo - p) * e; side = -1; }
-  else if (p > hi) { np = hi - (p - hi) * e; side = 1; }
+  if (p < BY0) { np = BY0 + (BY0 - p) * 0.72; side = -1; }
+  else if (p > BY1) { np = BY1 - (p - BY1) * 0.72; side = 1; }
   if (!side) return;
-  let nv = -v * e;
-  const impact = Math.abs(v);
-  if (axis === 1 && side === -1) {
+  let nv = -v * 0.72;
+  if (side === -1) {
     // Floor: lose some roll, and come to rest when the bounce dies out.
     b.vx *= 0.9; b.vz *= 0.9;
-    if (Math.abs(nv) < 1.6) { nv = 0; np = lo; }
+    if (Math.abs(nv) < 1.6) { nv = 0; np = BY0; }
   }
-  if (axis === 0) { b.x = np; b.vx = nv; }
-  else if (axis === 1) { b.y = np; b.vy = nv; }
-  else { b.z = np; b.vz = nv; }
-  if (cb && impact > 2) cb(axis, side, b.x, b.y, b.z, impact);
+  b.y = np; b.vy = nv;
+  if (cb && Math.abs(v) > 2) cb(0, -side, 0, b.x, b.y, b.z, Math.abs(v));
 }
 
 /** Advance the ball by dt (call with small dt: one substep). */
@@ -80,9 +97,8 @@ export function advanceBall(b: BallKin, dt: number, cb?: BounceFn) {
       b.vy -= LOB_GRAVITY * dt;
     }
     b.x += b.vx * dt; b.y += b.vy * dt; b.z += b.vz * dt;
-    lobAxis(b, 0, BX0, BX1, 0.85, cb);
-    lobAxis(b, 1, BY0, BY1, 0.72, cb);
-    lobAxis(b, 2, BZ0, BZ1, 0.85, cb);
+    walls(b, 0.85, cb);
+    floorCeilLob(b, cb);
     return;
   }
   if (b.cv !== 0) {
@@ -98,9 +114,8 @@ export function advanceBall(b: BallKin, dt: number, cb?: BounceFn) {
     b.vx = vx;
   }
   b.x += b.vx * dt; b.y += b.vy * dt; b.z += b.vz * dt;
-  foldLine(b, 0, BX0, BX1, cb);
-  foldLine(b, 1, BY0, BY1, cb);
-  foldLine(b, 2, BZ0, BZ1, cb);
+  walls(b, 1, cb);
+  floorCeilLine(b, cb);
 }
 
 /** Advance by a full frame/tick using adequate substeps. */

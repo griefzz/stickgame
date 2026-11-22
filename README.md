@@ -21,7 +21,8 @@ Enter a name and pick **Find a match**, **Practice vs bots**, or **Play with fri
 | Bunt | `K` or right click | `B` or `LT` |
 | Aim high / low | Hold `R` / `F` | Right stick up / down |
 | Curve left / right | Hold `Q` / `E` | Right stick left / right |
-| Camera, mute, menu | `C`, `M`, `Esc` | `Y`, `Back`, `Start` |
+| Mute, menu | `M`, `Esc` | `Back`, `Start` |
+| Director camera (while spectating) | `C` | `Y` |
 | Full screen | `Alt`+`Enter`, or the button in the corner | Pause menu → Full screen |
 
 - **Speed** climbs with every hit, up to 1000 on the speedometer. The freeze before each shot grows with it, from 0.05 s to about 1 s.
@@ -33,6 +34,9 @@ Enter a name and pick **Find a match**, **Practice vs bots**, or **Play with fri
   - **Arc racket (Reach):** 20% bigger hit zone, hits 5% softer.
   - **Rail staff (Timing):** 75 ms perfect window, quick recovery.
   - **Slab paddle (Spin):** curves bend 40% tighter, charges twice as fast.
+- **Arenas:** box, octagon, pentagon and circle. Bounces follow each wall's angle. Queue and practice matches pick one at random; in a private room the host picks.
+- **Camera:** one fixed arena camera while you play. Once you're out of the set you can switch to the director camera, which orbits and punches in on big hits.
+- **Wavedash:** press jump and dash together to skid along the floor at dash speed. Landing refunds the dash, so it chains at about twice running speed. The bots use it too.
 - **Movement:** you get one double jump and one air dash per jump, and up to three wall jumps before landing. Each wall jump gives back the double jump and dash. Pushing into a wall while falling slows you to a slide.
 
 ## Develop
@@ -133,6 +137,7 @@ On a server, edit `/etc/overclock/overclock.env`, then run `sudo systemctl resta
 | `MIN_PLAYERS` | `2` | Fewest humans the queue will start a match with |
 | `FILL_WAIT` | `12` | Seconds to wait for a full lobby once `MIN_PLAYERS` are queued |
 | `BOT_FILL_TO` | `MATCH_SIZE` | When the wait runs out, bots top the match up to this many seats, but only if every player in the lobby has **Fill empty seats with bots** on. `0` turns bots off for queue matches and hides the toggle. |
+| `ARENAS` | `box,octagon,pentagon,circle` | Arenas queue and practice matches pick from at random |
 | `MAX_CONNS` | `400` | Connection cap |
 | `PORT` | `8787` | Listen port. On a server it's set in the service file, and nginx expects 8787. |
 | `HOST` | `0.0.0.0` | Bind address. The service uses `127.0.0.1`, behind nginx. |

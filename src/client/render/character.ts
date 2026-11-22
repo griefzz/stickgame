@@ -1,7 +1,8 @@
 import * as THREE from "three";
-import { HX, HY, HZ, PLAYER, SLOTS, SWING } from "../../shared/constants";
+import { HY, PLAYER, SLOTS, SWING } from "../../shared/constants";
+import { eachPenetration } from "../../shared/arena";
 import { burst, ring } from "./fx";
-import { TAU, UP, clamp, glowTexture, lerp, rand, scene, smooth, v3 } from "./scene";
+import { TAU, UP, clamp, currentArena, glowTexture, lerp, rand, scene, smooth, v3 } from "./scene";
 
 const FS = SWING.animDur;   // swing animation length
 const CONTACT = 0.55;       // fraction of the swing at contact
@@ -352,8 +353,12 @@ export class Character {
     k.t += dt;
     k.vel.y -= PLAYER.gravity * 0.55 * dt;
     k.x += k.vel.x * dt; k.z += k.vel.z * dt; k.y += k.vel.y * dt;
-    if (Math.abs(k.x) > HX - 0.7) { k.x = clamp(k.x, -HX + 0.7, HX - 0.7); k.vel.x *= -0.55; }
-    if (Math.abs(k.z) > HZ - 0.7) { k.z = clamp(k.z, -HZ + 0.7, HZ - 0.7); k.vel.z *= -0.55; }
+    // Bounce off the arena walls, whatever their shape.
+    eachPenetration(currentArena(), k.x, k.z, 0.7, (nx, nz, over) => {
+      k.x -= nx * over; k.z -= nz * over;
+      const vn = k.vel.x * nx + k.vel.z * nz;
+      if (vn > 0) { k.vel.x -= 1.55 * vn * nx; k.vel.z -= 1.55 * vn * nz; }
+    });
     if (k.y > HY - 2.2) { k.y = HY - 2.2; k.vel.y *= -0.4; }
     if (k.y < 0) { k.y = 0; k.vel.y *= -0.38; k.vel.x *= 0.7; k.vel.z *= 0.7; k.spin.multiplyScalar(0.7); }
     k.rx += k.spin.x * dt; k.rz += k.spin.z * dt;

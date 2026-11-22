@@ -1,4 +1,5 @@
 import { NAME_MAX, SLOTS, WEAPONS } from "../shared/constants";
+import { ARENAS } from "../shared/arena";
 import type { RoomState, RosterEntry } from "../shared/protocol";
 import { sfx } from "./audio";
 import type { UiEvent } from "./input";
@@ -72,6 +73,9 @@ export class Menu {
   onRoomStart = () => {};
   onRoomBots = (_on: boolean) => {};
   onWeapon = (_w: number) => {};
+  onRoomArena = (_a: number) => {};
+  roomArenaBtn = $<HTMLButtonElement>("btnRoomArena");
+  roomWeaponBtn = $<HTMLButtonElement>("btnRoomWeapon");
   onFull = () => {};
 
   constructor() {
@@ -82,6 +86,8 @@ export class Menu {
     this.renderBots();
     try { const w = parseInt(localStorage.getItem("oc.weapon") ?? "0", 10); if (WEAPONS[w]) this.weapon = w; } catch {}
     this.renderWeapon();
+    this.roomWeaponBtn.addEventListener("click", (e) => this.cycleWeapon((e.target as HTMLElement).id === "roomWeaponPrev" ? -1 : 1));
+    this.roomArenaBtn.addEventListener("click", (e) => this.cycleRoomArena((e.target as HTMLElement).id === "roomArenaPrev" ? -1 : 1));
     this.weaponBtn.addEventListener("click", (e) => {
       const prev = (e.target as HTMLElement).id === "weaponPrev";
       this.cycleWeapon(prev ? -1 : 1);
@@ -173,7 +179,8 @@ export class Menu {
     const items = this.navItems();
     const cur = items.findIndex((x) => x.classList.contains("nav-focus"));
     // Left/right on the weapon picker changes the weapon instead of moving focus.
-    if ((e === "left" || e === "right") && document.activeElement === this.weaponBtn) { this.cycleWeapon(e === "left" ? -1 : 1); return; }
+    if ((e === "left" || e === "right") && (document.activeElement === this.weaponBtn || document.activeElement === this.roomWeaponBtn)) { this.cycleWeapon(e === "left" ? -1 : 1); return; }
+    if ((e === "left" || e === "right") && document.activeElement === this.roomArenaBtn) { this.cycleRoomArena(e === "left" ? -1 : 1); return; }
     if (e === "up" || e === "left" || e === "down" || e === "right") {
       if (!items.length) return;
       const d = e === "up" || e === "left" ? -1 : 1;
@@ -308,6 +315,9 @@ export class Menu {
     this.roomBotsBtn.setAttribute("aria-checked", String(!!r.bots));
     this.roomBotsBtn.disabled = !r.host;
     $("roomBotsHint").textContent = r.host ? "Bots take any seats your friends don't." : "The host decides.";
+    $("roomArenaName").textContent = r.arena >= 0 && ARENAS[r.arena] ? `Arena: ${ARENAS[r.arena].name}` : "Arena: Random";
+    $("roomArenaHint").textContent = r.host ? "Pick the arena for the next match, or leave it random." : "The host picks the arena.";
+    this.roomArenaBtn.disabled = !r.host;
     const me = r.players.find((p) => p.y);
     $("roomLive").textContent = r.live ? "Match in progress" : "";
     $("roomInfo").textContent = r.live
@@ -352,5 +362,16 @@ export class Menu {
     const w = WEAPONS[this.weapon];
     $("weaponName").textContent = w.name;
     $("weaponTrait").innerHTML = `<b>${esc(w.trait)}</b>${esc(w.desc)}`;
+    $("roomWeaponName").textContent = `Your weapon: ${w.name}`;
+    $("roomWeaponTrait").innerHTML = `<b>${esc(w.trait)}</b>${esc(w.desc)}`;
+  }
+
+  /** Host only: Random, then each arena in turn. */
+  cycleRoomArena(d: number) {
+    if (!this.room?.host) return;
+    const n = ARENAS.length + 1;
+    const next = ((this.room.arena + 1 + d + n) % n) - 1;
+    sfx.ui();
+    this.onRoomArena(next);
   }
 }

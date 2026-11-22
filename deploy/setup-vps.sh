@@ -74,6 +74,8 @@ MATCH_SIZE=4
 # Fewest humans a queue match starts with, and how long (seconds) to wait for more.
 MIN_PLAYERS=2
 FILL_WAIT=12
+# Arenas queue and practice matches pick from at random (rooms pick their own).
+#ARENAS=box,octagon,pentagon,circle
 # Bots may fill empty seats up to this many (if every player in the lobby allows it). 0 = never.
 # Defaults to MATCH_SIZE.
 #BOT_FILL_TO=4

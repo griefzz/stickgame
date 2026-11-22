@@ -3,6 +3,7 @@ import {
   BALL_SPAWN, DT, HX, KO_HOLD, MAX_PLAYERS, PLAYER, SLOTS, SPEED_NEUTRAL, SWING, displaySpeed, speedFeel, weaponOf,
 } from "../shared/constants";
 import { advanceBall, newKin, type BallKin } from "../shared/ball";
+import { arenaOf, wallContact } from "../shared/arena";
 import {
   B_BUNT, B_DASH, B_JUMP, B_JUMP_P, B_SWING, B_SWING_HELD, copyP, hurtDist2, newPState, q3, stepPlayer, type Input, type PState,
 } from "../shared/player";
@@ -13,14 +14,14 @@ import {
   B_CHG, B_CT, B_CV, PH_COUNTDOWN, PH_OVER, P_AIRJ, P_AX, P_DASH, P_FLAGS, P_STOCKS, P_WALLJ, decodeP, type RosterEntry,
 } from "../shared/protocol";
 import { sfx, stopCharge } from "./audio";
-import { banner, callout, countdown, hudSetup, hudShow, hudUpdate, netInfo, type HudPlayer } from "./hud";
+import { banner, callout, countdown, hudSetup, hudShow, hudUpdate, netInfo, spectateHint, type HudPlayer } from "./hud";
 import { rumble, sampleInput } from "./input";
 import type { Net } from "./net";
 import { clearTrail, pushTrail, setTelegraph, updateBall } from "./render/ball";
-import { cancelFocus, koFocus, shake, updateCamera } from "./render/camera";
+import { cancelFocus, directorPref, hitFocus, koFocus, setCamMode, shake, updateCamera } from "./render/camera";
 import { Character, type PlayerView } from "./render/character";
 import { burst, flash, killRing, ring } from "./render/fx";
-import { UP, WHITE, crowd, v3 } from "./render/scene";
+import { UP, WHITE, crowd, setArena, v3 } from "./render/scene";
 
 const INTERP = 0.06;
 const MAX_TICKS_PER_FRAME = 6;
@@ -38,6 +39,7 @@ export class ClientMatch {
   roster: (RosterEntry | null)[];
   practice: boolean;
   roomCode: string | null;
+  arena: number;
   cdEnd: number;
   snaps: Snap[] = [];
   latest: Snap | null = null;
@@ -81,17 +83,21 @@ export class ClientMatch {
     this.timers.push(window.setTimeout(() => { if (!this.disposed) fn(); }, ms));
   }
 
-  constructor(net: Net, slot: number, roster: (RosterEntry | null)[], cdEnd: number, practice: boolean, roomCode: string | null = null) {
+  constructor(net: Net, slot: number, roster: (RosterEntry | null)[], cdEnd: number, practice: boolean, roomCode: string | null = null, arena = 0) {
     this.net = net;
     this.slot = slot;
     this.roster = roster;
     this.cdEnd = cdEnd;
     this.practice = practice;
     this.roomCode = roomCode;
+    this.arena = arena;
+    this.kin.ar = arena;
+    setArena(arena);
     this.pred = newPState(0, 0);
     this.prevPred = newPState(0, 0);
     // Weapons are fixed for the match: prediction needs ours, the models need everyone's.
     this.pred.wp = this.prevPred.wp = roster[slot]?.w ?? 0;
+    this.pred.ar = this.prevPred.ar = arena;
     roster.forEach((r, i) => { if (r) chars[i].setWeapon(weaponOf(r.w).key); });
     for (const c of chars) c.reset();
     clearTrail();
@@ -113,6 +119,8 @@ export class ClientMatch {
     stopCharge();
     countdown(null);
     hudShow(false);
+    setCamMode("arena");
+    spectateHint(false, false);
   }
 
   // ---------------------------------------------------------------- network in
@@ -190,6 +198,11 @@ export class ClientMatch {
           flash("#ffffff", 0.12);
           sfx.perfect();
           shake(0.15);
+        }
+        // Director camera (spectators): punch in beside the ball on big hits, looking along the hitter's aim.
+        if (e.hs > 0.14 || k > 0.42) {
+          const hf = this.latest?.p[e.s]?.[6] ?? 0;
+          hitFocus(v3(e.x, e.y, e.z), v3(Math.sin(hf), 0, Math.cos(hf)), performance.now() / 1000, e.hs + 0.12);
         }
         if (e.s === this.slot) {
           this.frozenLocal = true;
@@ -300,8 +313,8 @@ export class ClientMatch {
     // Countdown
     if (this.phase === PH_COUNTDOWN && !this.over) {
       const left = this.cdEnd - now;
-      const txt = left > 0 && left <= 3.05 ? String(Math.ceil(left - 0.05)) : left > 3.05 ? "READY" : "";
-      if (txt && txt !== this.lastCount) { this.lastCount = txt; if (txt !== "READY") sfx.beep(false); }
+      const txt = left > 0 && left <= 3.05 ? String(Math.ceil(left - 0.05)) : left > 3.05 ? arenaOf(this.arena).name.toUpperCase() : "";
+      if (txt && txt !== this.lastCount) { this.lastCount = txt; if (/^\d$/.test(txt)) sfx.beep(false); }
       countdown(txt || null);
     } else if (rt > this.goUntil) countdown(null);
 
@@ -380,10 +393,10 @@ export class ClientMatch {
         const sf = speedFeel(speed), col = slotColor(owner);
         for (let i = 0; i < n; i++) {
           tc += h;
-          advanceBall(k, h, (axis, side, x, y, z, imp) => {
+          advanceBall(k, h, (nx, ny, nz, x, y, z, imp) => {
             if (tc <= this.lastBounceT + 1e-4) return;
             this.lastBounceT = tc;
-            this.bounceFx(axis, side, x, y, z, k.lob ? Math.min(1, imp / 20) * 0.4 : sf, col, k.lob);
+            this.bounceFx(nx, ny, nz, x, y, z, k.lob ? Math.min(1, imp / 20) * 0.4 : sf, col, k.lob);
             pushTrail(x, y, z, rt);
           });
         }
@@ -426,7 +439,7 @@ export class ClientMatch {
       const d = shotDir(f, ay, ax, air, this.ballPos, targets, weaponOf(this.roster[hitter]?.w).curve);
       const total = Math.max(0.05, this.lastFreeze);
       const strength = 0.35 + 0.65 * Math.min(1, 1 - left / total);
-      setTelegraph(true, this.ballPos, d, slotColor(hitter), strength, rt);
+      setTelegraph(true, this.ballPos, { ...d, ar: this.arena }, slotColor(hitter), strength, rt);
     } else setTelegraph(false);
 
     // Double-jump puffs: a ring under the feet whenever someone spends their air jump.
@@ -445,8 +458,9 @@ export class ClientMatch {
       const local = i === this.slot && this.aliveLocal;
       const wj = local ? this.pred.wj : (L?.p[i]?.[P_WALLJ] ?? 0);
       if (v && v.alive && wj > this.lastWj[i]) {
-        const nx = Math.abs(v.x) > HX - 1.5 ? -Math.sign(v.x) : 0;
-        const nz = nx ? 0 : -Math.sign(v.z);
+        // The wall they kicked off: nearest wall's outward normal (n), ring faces back inward.
+        const wc = wallContact(arenaOf(this.arena), v.x, v.z, PLAYER.wallMargin, 0.6);
+        const nx = wc ? -wc.nx : 0, nz = wc ? -wc.nz : 1;
         const at = { x: v.x - nx * 0.6, y: v.y + 1, z: v.z - nz * 0.6 };
         ring(at, { color: chars[i].color, normal: v3(nx, 0, nz), from: 0.3, to: 2.2, life: 0.4, peak: 0.9 });
         burst(at, 18, { color: chars[i].color, hemi: v3(nx, 0, nz), speed: [3, 8], life: [0.15, 0.4], size: [0.05, 0.12], drag: 4, white: true });
@@ -472,6 +486,10 @@ export class ClientMatch {
       visible: this.ballOn, x: this.ballPos.x, y: this.ballPos.y, z: this.ballPos.z,
       color: slotColor(owner), speedFrac: speedFeel(speed), frozen, bigFreeze: frozen && (this.lastFreeze > 0.1 || charge > 0), charge,
     });
+    // Out of the set: you're spectating, and may use the director camera.
+    const spectating = !!((L?.p[this.slot]?.[P_FLAGS] ?? 0) & (PF_OUT | PF_GONE)) && !this.over;
+    setCamMode(spectating && directorPref() ? "director" : "arena");
+    spectateHint(spectating, directorPref());
     const meV = views[this.slot];
     updateCamera(dt, rt, { x: this.ballPos.x, y: this.ballPos.y, z: this.ballPos.z, on: this.ballOn }, meV && meV.alive ? meV : null);
     hudUpdate(dt, { on: this.ballOn, speed, owner, frozen, hitstop: state === BS_HITSTOP, charge, freezeLeft: left, lastFreeze: this.lastFreeze, hits, hitter, threat: this.threat }, hudP);
@@ -509,8 +527,8 @@ export class ClientMatch {
     if (!this.over) this.net.sendRaw(`{"t":"i","d":[${inp.s},${inp.mx},${inp.mz},${inp.ay},${inp.b},${inp.t},${inp.ax}]}`);
   }
 
-  bounceFx(axis: number, side: number, x: number, y: number, z: number, k: number, col: THREE.Color, lob: boolean) {
-    const n = axis === 0 ? v3(-side, 0, 0) : axis === 1 ? v3(0, -side, 0) : v3(0, 0, -side);
+  bounceFx(nx: number, ny: number, nz: number, x: number, y: number, z: number, k: number, col: THREE.Color, lob: boolean) {
+    const n = v3(nx, ny, nz); // inward normal of the surface hit
     const at = { x: x - n.x * 0.3, y: y - n.y * 0.3, z: z - n.z * 0.3 };
     ring(at, { color: col, normal: n, from: 0.3, to: 1.4 + 2.8 * k, life: 0.55, peak: lob ? 0.5 : 0.95 });
     burst(at, Math.round(8 + 26 * k), { color: col, hemi: n, speed: [3, 8 + 18 * k], life: [0.15, 0.45], size: [0.06, 0.14], drag: 3, white: true });

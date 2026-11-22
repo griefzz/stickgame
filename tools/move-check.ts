@@ -1,6 +1,7 @@
 // Unit checks for the shared movement and ball physics (no server needed).
 // Usage: bun tools/move-check.ts
-import { HX, PLAYER, WEAPONS } from "../src/shared/constants";
+import { BALL_R, HX, HY, PLAYER, WEAPONS } from "../src/shared/constants";
+import { ARENAS, inside } from "../src/shared/arena";
 import { advanceBall, newKin } from "../src/shared/ball";
 import { B_DASH, B_JUMP, B_JUMP_P, B_SWING, newPState, stepPlayer, type PState } from "../src/shared/player";
 import { CURVE_TURN, shotDir } from "../src/shared/shot";
@@ -101,6 +102,53 @@ const land = (p: PState) => { for (let i = 0; i < 300 && !p.g; i++) step(p, 0); 
   stepPlayer(ham, { s: 0, mx: 0, mz: 0, ay: 0, ax: 0, b: B_SWING, t: 0 }, false);
   stepPlayer(staff, { s: 0, mx: 0, mz: 0, ay: 0, ax: 0, b: B_SWING, t: 0 }, false);
   check("weapons: hammer recovers slower than staff", ham.cd === WEAPONS[0].recover && staff.cd === WEAPONS[2].recover && ham.cd > staff.cd, `${ham.cd} vs ${staff.cd} ticks`);
+}
+
+// Arenas: the ball never escapes, reflections follow each wall's angle, players stay inside.
+{
+  for (let ai = 0; ai < ARENAS.length; ai++) {
+    const a = ARENAS[ai];
+    const k = newKin(ai); k.y = 5; k.vx = 173; k.vy = 41; k.vz = -97;
+    let escaped = 0, bounces = 0;
+    for (let i = 0; i < 6000; i++) {
+      advanceBall(k, 1 / 600, () => bounces++);
+      if (!inside(a, k.x, k.z, BALL_R - 1e-6) || k.y < BALL_R - 1e-6 || k.y > HY - BALL_R + 1e-6) escaped++;
+    }
+    const sp = Math.hypot(k.vx, k.vy, k.vz);
+    check(`${a.key}: fast ball stays inside for 10 s`, escaped === 0 && Math.abs(sp - Math.hypot(173, 41, 97)) < 1e-6, `${bounces} bounces`);
+    const p = newPState(0, 0, 0, ai);
+    for (let i = 0; i < 400; i++) step(p, 0, Math.cos(i / 40), Math.sin(i / 40));
+    check(`${a.key}: player can't leave`, inside(a, p.x, p.z, PLAYER.wallMargin - 1e-6), `(${p.x.toFixed(1)}, ${p.z.toFixed(1)})`);
+  }
+  // Octagon diagonal: a ball flying straight at the 45 degree wall comes straight back.
+  const oi = ARENAS.findIndex((x) => x.key === "octagon");
+  const w = ARENAS[oi].walls.find((x) => x.nx > 0.6 && x.nz > 0.6)!;
+  const k = newKin(oi); k.y = 5; k.vx = w.nx * 40; k.vz = w.nz * 40;
+  for (let i = 0; i < 200; i++) advanceBall(k, 1 / 400); // 0.5 s: one bounce (the wall is 12.7 m out)
+  check("octagon: head-on hit on a diagonal wall comes straight back", Math.abs(k.vx + w.nx * 40) < 1e-6 && Math.abs(k.vz + w.nz * 40) < 1e-6, `v=(${k.vx.toFixed(1)}, ${k.vz.toFixed(1)})`);
+  // Circle: a ball fired from the centre comes back through the centre.
+  const ci = ARENAS.findIndex((x) => x.key === "circle");
+  const c = newKin(ci); c.y = 5; c.vx = 30; c.vz = 10;
+  for (let i = 0; i < 300; i++) advanceBall(c, 1 / 300);
+  const cross = Math.abs(c.x * c.vz - c.z * c.vx) / Math.hypot(c.vx, c.vz);
+  check("circle: radial shot bounces back along the radius", cross < 0.05, `miss distance ${cross.toFixed(3)} m`);
+  // Wall jump off the circle's curved wall kicks back toward the middle.
+  const r = ARENAS[ci].radius - PLAYER.wallMargin;
+  const pj = newPState(r * Math.SQRT1_2, r * Math.SQRT1_2, 0, ci);
+  step(pj, B_JUMP | B_JUMP_P, 1, 1);
+  for (let i = 0; i < 8; i++) step(pj, B_JUMP, 1, 1);
+  step(pj, B_JUMP | B_JUMP_P, 1, 1);
+  check("circle: wall jump kicks back toward the centre", pj.wj === 1 && pj.vx < -4 && pj.vz < -4, `v=(${pj.vx.toFixed(1)}, ${pj.vz.toFixed(1)})`);
+}
+
+// Wavedash: jump + dash on the same tick skids along the floor at dash speed, and since you
+// never really leave the ground the dash refunds at once, so it chains.
+{
+  const run = newPState(-14, 0), wd = newPState(-14, 0);
+  for (let i = 0; i < 60; i++) step(run, 0, 1, 0);
+  for (let i = 0; i < 60; i++) step(wd, i % PLAYER.dashTicks === 0 ? B_JUMP_P | B_DASH : 0, 1, 0);
+  const runD = run.x + 14, wdD = wd.x + 14;
+  check("wavedash: chains at about twice running speed", wdD > runD * 1.8 && wd.y === 0, `1 s: ${wdD.toFixed(1)} m vs ${runD.toFixed(1)} m running`);
 }
 
 process.exit(fails ? 1 : 0);
