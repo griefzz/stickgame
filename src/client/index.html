@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Overclock Arena</title>
+<meta name="description" content="Overclock Arena: a 3D deflection arena for up to four players. Every hit speeds the ball up.">
+<meta name="theme-color" content="#08070f">
+<meta name="build" content="__OC_BUILD_ID__">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%2308070f'/%3E%3Ccircle cx='32' cy='32' r='13' fill='%23ff3d6e'/%3E%3Ccircle cx='32' cy='32' r='22' fill='none' stroke='%23ff3d6e' stroke-width='3' opacity='.5'/%3E%3C/svg%3E">
+<style>/*__CSS__*/</style>
+</head>
+<body>
+<canvas id="c" aria-label="3D arena"></canvas>
+<div class="vig" aria-hidden="true"></div>
+<div class="charge" id="charge" aria-hidden="true"></div>
+<div class="flash" id="flash" aria-hidden="true"></div>
+
+<div id="hud" hidden>
+  <header class="brand small">
+    <div class="mark">OVER<span>CLOCK</span></div>
+    <div class="keys kb-only"><b>J</b>/<b>Click</b> swing · <b>K</b> bunt · <b>Space</b> jump (×2 in air) · hold <b>E</b>/<b>Q</b> aim high/low · <b>Esc</b> menu</div>
+    <div class="keys pad-only"><b>X</b>/<b>RT</b> swing · <b>B</b> bunt · <b>A</b> jump (×2 in air) · <b>Right stick</b> aim high/low · <b>Start</b> menu</div>
+  </header>
+
+  <section class="speed" id="speedPanel" aria-label="Ball speed">
+    <div class="speed-label" id="speedLabel">Ball speed</div>
+    <div class="speed-num" id="speedNum">030</div>
+    <div class="speed-bar"><i id="speedFill"></i></div>
+    <div class="speed-meta">
+      <span class="opt">Owner <b id="owner">Neutral</b></span>
+      <span>Freeze <b id="freeze">0.00</b><small> s</small></span>
+      <span>Rally <b id="rally">0</b></span>
+    </div>
+  </section>
+
+  <div class="netinfo" id="netinfo"></div>
+  <div class="roster" id="roster"></div>
+  <div id="tags"></div>
+  <div id="callouts"></div>
+  <div class="countdown" id="countdown" hidden></div>
+  <div class="banner" id="banner"><div class="big" id="bannerBig"></div><div class="small" id="bannerSmall"></div></div>
+</div>
+
+<div id="menu">
+  <!-- Title -->
+  <section class="screen title" id="scrTitle">
+    <div class="col main">
+      <header class="brand hero">
+        <div class="mark">OVER<span>CLOCK</span></div>
+        <div class="sub">Arena · 3D deflection · up to 4 players</div>
+      </header>
+
+      <label class="field">
+        <span class="lbl">Your name</span>
+        <span class="row">
+          <input id="nameInput" type="text" autocomplete="nickname" spellcheck="false" data-nav>
+          <button type="button" class="ghost" id="btnShuffle" data-nav title="Random name">Shuffle</button>
+        </span>
+      </label>
+
+      <button type="button" class="toggle bots-toggle" id="btnBots" role="switch" aria-checked="true" data-nav>
+        <span class="sw" aria-hidden="true"></span>
+        <span class="tl">Fill empty seats with bots</span>
+        <span class="th">If the lobby isn't full when the timer runs out. Bots only join if everyone in the lobby allows them.</span>
+      </button>
+
+      <div class="actions">
+        <button type="button" class="btn primary" id="btnFind" data-nav data-autofocus disabled>
+          <span>Find a match</span><span class="glyph"><i class="kb-only">Enter</i><i class="pad-only">A</i></span>
+        </button>
+        <button type="button" class="btn" id="btnPractice" data-nav disabled>
+          <span>Practice vs bots</span>
+        </button>
+      </div>
+
+      <div class="status">
+        <span class="net connecting" id="netStatus">Connecting to server…</span>
+        <span class="online" id="onlineCount"></span>
+      </div>
+      <p class="notice" id="notice" role="status" hidden></p>
+    </div>
+
+    <div class="col side">
+      <div class="card info">
+        <h2>How it plays</h2>
+        <ul>
+          <li><b>Every hit speeds the ball up.</b> Bounces never slow it down.</li>
+          <li><b>The ball takes the hitter's colour.</b> If it touches anyone else, they lose a stock. Three stocks each, last one standing wins.</li>
+          <li><b>Swing to send it back.</b> Time your swing as it reaches you. Your shot goes where you face, and snaps onto an opponent if they're close to your aim.</li>
+          <li><b>The freeze grows with speed.</b> The ball hangs on the bat before it fires. The dotted line shows the shot, and the hitter can still re-aim, so move.</li>
+          <li><b>Bunt to reset the tempo.</b> It pops the ball up harmlessly and keeps its speed for the next smash.</li>
+        </ul>
+      </div>
+      <div class="card controls">
+        <h2>Controls <span class="pad-status" id="padStatus">No controller</span></h2>
+        <div class="ctl-grid">
+          <div class="ctl-col kbcol">
+            <h3>Keyboard + mouse</h3>
+            <dl>
+              <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>Move</dd>
+              <dt><kbd>Space</kbd></dt><dd>Jump, double jump</dd>
+              <dt><kbd>J</kbd> <kbd>Click</kbd></dt><dd>Swing</dd>
+              <dt><kbd>K</kbd> <kbd>R-Click</kbd></dt><dd>Bunt</dd>
+              <dt><kbd>E</kbd> / <kbd>Q</kbd></dt><dd>Hold to aim high / low</dd>
+              <dt><kbd>C</kbd> <kbd>M</kbd> <kbd>Esc</kbd></dt><dd>Camera, mute, menu</dd>
+            </dl>
+          </div>
+          <div class="ctl-col padcol">
+            <h3>Controller</h3>
+            <dl>
+              <dt><kbd>L-Stick</kbd></dt><dd>Move</dd>
+              <dt><kbd>A</kbd> <kbd>LB</kbd></dt><dd>Jump, double jump</dd>
+              <dt><kbd>X</kbd> <kbd>RB</kbd> <kbd>RT</kbd></dt><dd>Swing</dd>
+              <dt><kbd>B</kbd> <kbd>LT</kbd></dt><dd>Bunt</dd>
+              <dt><kbd>R-Stick</kbd></dt><dd>Up / down to aim high / low</dd>
+              <dt><kbd>Y</kbd> <kbd>Back</kbd> <kbd>Start</kbd></dt><dd>Camera, mute, menu</dd>
+            </dl>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Queue -->
+  <section class="screen center" id="scrQueue" hidden>
+    <div class="panel queue">
+      <div class="eyebrow"><i class="pulse"></i> Finding a match <span class="qtime" id="queueTime">0:00</span></div>
+      <div class="qcount" id="queueCount">1 / 4</div>
+      <ol class="qnames" id="queueNames"></ol>
+      <p class="qinfo" id="queueInfo">Waiting for players</p>
+      <button type="button" class="toggle bots-toggle" id="btnBotsQ" role="switch" aria-checked="true" data-nav>
+        <span class="sw" aria-hidden="true"></span>
+        <span class="tl">Fill empty seats with bots</span>
+        <span class="th">Bots only join if everyone in the lobby allows them.</span>
+      </button>
+      <button type="button" class="btn" id="btnCancel" data-nav data-autofocus><span>Cancel</span><span class="glyph"><i class="kb-only">Esc</i><i class="pad-only">B</i></span></button>
+    </div>
+  </section>
+
+  <!-- Pause -->
+  <section class="screen center" id="scrPause" hidden>
+    <div class="panel pause">
+      <div class="eyebrow">Paused · the match keeps running</div>
+      <button type="button" class="btn primary" id="btnResume" data-nav><span>Resume</span><span class="glyph"><i class="kb-only">Esc</i><i class="pad-only">Start</i></span></button>
+      <button type="button" class="btn" id="btnCam" data-nav><span>Camera</span><b>Arena</b></button>
+      <button type="button" class="btn" id="btnSound" data-nav><span>Sound</span><b>On</b></button>
+      <button type="button" class="btn danger" id="btnLeave" data-nav><span>Leave match</span></button>
+    </div>
+  </section>
+
+  <!-- Results -->
+  <section class="screen center" id="scrResults" hidden>
+    <div class="panel results">
+      <div class="rhead" id="resultHead"></div>
+      <ol class="rlist" id="resultList"></ol>
+      <button type="button" class="btn primary" id="btnAgain" data-nav><span>Find another match</span></button>
+      <button type="button" class="btn" id="btnMenu" data-nav><span>Main menu</span></button>
+    </div>
+  </section>
+</div>
+
+<div id="fallback" hidden>This browser couldn't start WebGL, so the arena can't render here.<br>Open the page in a recent Chrome, Edge, Firefox or Safari with hardware acceleration turned on.</div>
+<script type="module">/*__JS__*/</script>
+</body>
+</html>

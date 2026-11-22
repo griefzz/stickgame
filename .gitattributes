@@ -1,0 +1,7 @@
+* text=auto
+# Scripts and config that run on the Linux VPS must keep LF line endings.
+*.sh text eol=lf
+deploy/* text eol=lf
+.github/** text eol=lf
+*.woff2 binary
+*.png binary

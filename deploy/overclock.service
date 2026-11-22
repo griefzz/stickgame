@@ -1,0 +1,39 @@
+# /etc/systemd/system/overclock.service
+# sudo systemctl daemon-reload && sudo systemctl enable --now overclock
+[Unit]
+Description=Overclock Arena game server
+After=network.target
+
+[Service]
+Type=simple
+User=overclock
+Group=overclock
+WorkingDirectory=/opt/overclock
+ExecStart=/usr/local/bin/bun /opt/overclock/dist/server.js
+Restart=always
+RestartSec=2
+
+# Bind to localhost only; nginx is the public face.
+Environment=HOST=127.0.0.1
+Environment=PORT=8787
+# Read the page through the dist symlink, so the build ID players are told about follows
+# client-only deploys (which don't restart the server).
+Environment=INDEX_HTML=/opt/overclock/dist/index.html
+# Matchmaking: a lobby launches as soon as MATCH_SIZE players queue (2-4). With at least
+# MIN_PLAYERS queued, it waits FILL_WAIT seconds for more, then launches with whoever is there.
+Environment=MATCH_SIZE=4
+Environment=MIN_PLAYERS=2
+Environment=FILL_WAIT=12
+# When the wait runs out, bots top the match up to this many seats, but only if every player
+# in the lobby has "Fill empty seats with bots" on (it's on by default). 0 = never use bots.
+Environment=BOT_FILL_TO=4
+Environment=MAX_CONNS=400
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/opt/overclock
+
+[Install]
+WantedBy=multi-user.target
