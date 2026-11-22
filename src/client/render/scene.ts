@@ -129,7 +129,7 @@ scene.add(ground);
 
 const gridTex = wallGridTexture();
 const dummy = new THREE.Object3D();
-interface Glass { n: THREE.Vector3; c: THREE.Vector3; m: THREE.Mesh; base: number }
+interface Glass { n: THREE.Vector3; c: THREE.Vector3; mat: THREE.MeshBasicMaterial; base: number }
 interface Fan { p: THREE.Vector3; ph: number; f: number; k: number; sc: number; li: number }
 export const crowd = { excite: 0.2, spots: [] as Fan[], fans: null as THREE.InstancedMesh | null, lights: null as THREE.InstancedMesh | null };
 let glass: Glass[] = [];
@@ -211,14 +211,31 @@ function makeFloor(a: Arena) {
       t.font = `700 ${Math.round(0.9 * U)}px "Chakra Petch", sans-serif`;
       t.fillStyle = "rgba(255,255,255,.12)";
       const [sx, sy] = toC(0, -a.hz * 0.76);
-      const label = a.key === "box" ? "ARENA 03  ·  30 × 20 × 12 CUBE" : `ARENA ${a.name.toUpperCase()}  ·  12 M HIGH`;
+      const label = a.key === "box" ? "ARENA 03  ·  30 × 20 × 12 CUBE" : `ARENA ${a.name.toUpperCase()}  ·  ${a.top} M HIGH`;
       t.fillText(label, sx, sy);
     }
     t.restore();
+    const blockPath = (g: CanvasRenderingContext2D, b: Arena["blocks"][number]) => {
+      g.beginPath();
+      if (b.kind === "rect") {
+        const [x0, y0] = toC(b.x0, b.z0), [x1, y1] = toC(b.x1, b.z1);
+        g.rect(x0, y0, x1 - x0, y1 - y0);
+      } else {
+        const [cx, cy] = toC(b.x, b.z);
+        g.arc(cx, cy, b.r * U, 0, TAU);
+      }
+    };
+    for (const b of a.blocks) { blockPath(t, b); t.fillStyle = "#06050b"; t.fill(); }
     const lines = (g: CanvasRenderingContext2D, col: string, w: number) => {
       g.strokeStyle = col; g.lineWidth = w;
-      outlinePath(g, a, 0.6, toC, U);
+      if (a.shell?.kind === "roundbox") {
+        // The slide: mark where the flat floor ends and the curve begins.
+        const fx = a.shell.hx - a.shell.r, fz = a.shell.hz - a.shell.r;
+        const [x0, y0] = toC(-fx, -fz), [x1, y1] = toC(fx, fz);
+        g.beginPath(); g.rect(x0, y0, x1 - x0, y1 - y0);
+      } else outlinePath(g, a, 0.6, toC, U);
       g.stroke();
+      for (const b of a.blocks) { blockPath(g, b); g.stroke(); }
       const [cx, cy] = toC(0, 0);
       g.beginPath(); g.arc(cx, cy, 3 * U, 0, TAU); g.stroke();
       g.beginPath(); g.arc(cx, cy, 0.4 * U, 0, TAU); g.stroke();
@@ -281,6 +298,223 @@ function disposeGroup(g: THREE.Group) {
   });
 }
 
+function glassMat(rx: number, ry: number) {
+  const t = gridTex.clone();
+  t.needsUpdate = true;
+  t.repeat.set(rx, ry);
+  return new THREE.MeshBasicMaterial({
+    color: new THREE.Color(0.42, 0.34, 1), map: t, transparent: true, opacity: 0.16,
+    blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false,
+  });
+}
+
+const neon = {
+  low: () => new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 0.22, 0.52).multiplyScalar(2.4) }),
+  top: () => new THREE.MeshBasicMaterial({ color: new THREE.Color(0.25, 0.6, 1).multiplyScalar(2.2) }),
+  vert: () => new THREE.MeshBasicMaterial({ color: new THREE.Color(0.55, 0.32, 1).multiplyScalar(2) }),
+};
+
+function tube(G: THREE.Group, ax: number, ay: number, az: number, bx: number, by: number, bz: number, mat: THREE.Material, r = 0.05) {
+  const d = v3(bx - ax, by - ay, bz - az), len = d.length();
+  if (len < 1e-4) return;
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 6, 1), mat);
+  m.position.set(ax, ay, az).addScaledVector(d, 0.5);
+  m.quaternion.setFromUnitVectors(UP, d.normalize());
+  G.add(m);
+}
+
+/** A smooth neon tube through 3D points. */
+function curveTube(G: THREE.Group, pts: THREE.Vector3[], mat: THREE.Material, r = 0.05, closed = false) {
+  const c = new THREE.CatmullRomCurve3(pts, closed);
+  G.add(new THREE.Mesh(new THREE.TubeGeometry(c, Math.max(16, pts.length * 3), r, 6, closed), mat));
+}
+
+/** Polyline loop through floor-plan points at height y. */
+function loop(G: THREE.Group, pts: [number, number][], y: number, mat: THREE.Material, r = 0.05) {
+  pts.forEach(([x, z], i) => { const [x2, z2] = pts[(i + 1) % pts.length]; tube(G, x, y, z, x2, y, z2, mat, r); });
+}
+
+/** Flat floor-plan arenas: vertical glass walls, a glass roof, neon outlines and posts. */
+function buildWalls(G: THREE.Group, a: Arena) {
+  const H = a.top;
+  for (const w of a.walls) {
+    const len = Math.hypot(w.bx - w.ax, w.bz - w.az);
+    const mat = glassMat(len / 3, H / 3);
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(len, H), mat);
+    m.position.set((w.ax + w.bx) / 2, H / 2, (w.az + w.bz) / 2);
+    m.rotation.y = Math.atan2(-w.nx, -w.nz);
+    G.add(m);
+    glass.push({ n: v3(-w.nx, 0, -w.nz), c: m.position.clone(), mat, base: 0.17 });
+  }
+  {
+    const isBox = a.key === "box";
+    // Box roof UVs are 0..1 across the plane; shaped roofs use metres.
+    const mat = glassMat(isBox ? (2 * a.hx) / 3 : 1 / 3, isBox ? (2 * a.hz) / 3 : 1 / 3);
+    const roof = new THREE.Mesh(arenaShapeGeometry(a, false), mat);
+    roof.rotation.x = -Math.PI / 2;
+    roof.position.y = H;
+    G.add(roof);
+    glass.push({ n: v3(0, -1, 0), c: v3(0, H, 0), mat, base: a.view === "top" ? 0.035 : 0.1 });
+  }
+  const low = neon.low(), top = neon.top(), vert = neon.vert();
+  for (const w of a.walls) {
+    tube(G, w.ax, 0, w.az, w.bx, 0, w.bz, low);
+    tube(G, w.ax, H, w.az, w.bx, H, w.bz, top);
+  }
+  const postEvery = a.radius > 0 ? 6 : 1;
+  a.verts.forEach(([x, z], i) => { if (i % postEvery === 0) tube(G, x, 0, z, x, H, z, vert, 0.07); });
+}
+
+/** Glass sphere cut by the floor, in lunes so the side facing the camera can fade. */
+function buildSphere(G: THREE.Group, a: Arena, s: { cy: number; r: number }) {
+  const N = 12, th = Math.acos(-s.cy / s.r);
+  for (let k = 0; k < N; k++) {
+    const p0 = (k * TAU) / N, pm = p0 + Math.PI / N;
+    const mat = glassMat((s.r * TAU) / N / 3, (s.r * th) / 3);
+    const m = new THREE.Mesh(new THREE.SphereGeometry(s.r, 8, 30, p0, TAU / N, 0, th), mat);
+    m.position.y = s.cy;
+    G.add(m);
+    // SphereGeometry puts azimuth phi at (-cos phi, sin phi) in x/z.
+    glass.push({ n: v3(Math.cos(pm), 0, -Math.sin(pm)), c: v3(-Math.cos(pm) * s.r, s.cy, Math.sin(pm) * s.r), mat, base: 0.15 });
+  }
+  const ring = (rad: number, y: number) => Array.from({ length: 48 }, (_, i) => v3(Math.cos((i / 48) * TAU) * rad, y, Math.sin((i / 48) * TAU) * rad));
+  curveTube(G, ring(a.radius, 0.02), neon.low(), 0.06, true);
+  curveTube(G, ring(s.r - 0.03, s.cy), neon.top(), 0.06, true);
+  // Meridians over the top, floor to floor.
+  const vert = neon.vert(), a0 = -Math.asin(s.cy / s.r);
+  for (let k = 0; k < 4; k++) {
+    const phi = (k * Math.PI) / 4, dx = Math.cos(phi), dz = Math.sin(phi);
+    const pts: THREE.Vector3[] = [];
+    for (let i = 0; i <= 40; i++) {
+      const al = a0 + (i / 40) * (Math.PI - 2 * a0), rr = Math.cos(al) * (s.r - 0.03);
+      pts.push(v3(dx * rr, s.cy + Math.sin(al) * (s.r - 0.03), dz * rr));
+    }
+    curveTube(G, pts, vert, 0.04);
+  }
+}
+
+/** Box with rounded edges (the slide): a subdivided box with each vertex pushed onto the rounding. */
+function roundBoxGeometry(s: { hx: number; hy: number; hz: number; r: number }, step = 0.7) {
+  const g = new THREE.BoxGeometry(2 * s.hx, 2 * s.hy, 2 * s.hz, Math.ceil((2 * s.hx) / step), Math.ceil((2 * s.hy) / step), Math.ceil((2 * s.hz) / step));
+  const p = g.attributes.position, n = g.attributes.normal;
+  const cx = s.hx - s.r, cy = s.hy - s.r, cz = s.hz - s.r;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    const kx = clamp(x, -cx, cx), ky = clamp(y, -cy, cy), kz = clamp(z, -cz, cz);
+    let dx = x - kx, dy = y - ky, dz = z - kz;
+    const l = Math.hypot(dx, dy, dz) || 1;
+    dx /= l; dy /= l; dz /= l;
+    p.setXYZ(i, kx + dx * s.r, ky + dy * s.r + s.hy, kz + dz * s.r);
+    n.setXYZ(i, dx, dy, dz);
+  }
+  return g;
+}
+
+/** The slide: floor turf runs up the curves, the rest is glass. */
+function buildRoundBox(G: THREE.Group, a: Arena, s: { hx: number; hy: number; hz: number; r: number }, floorMat: THREE.MeshStandardMaterial) {
+  const g = roundBoxGeometry(s);
+  // Floor face (BoxGeometry group 3, -y): UVs from x/z so the painted floor lines up.
+  const uv = g.attributes.uv, p = g.attributes.position, idx = g.index!;
+  const fg = g.groups[3];
+  for (let i = fg.start; i < fg.start + fg.count; i++) {
+    const v = idx.getX(i);
+    uv.setXY(v, (p.getX(v) + a.hx) / (2 * a.hx), (a.hz - p.getZ(v)) / (2 * a.hz));
+  }
+  floorMat.side = THREE.BackSide;
+  const H = 2 * s.hy;
+  const mats = [glassMat((2 * s.hz) / 3, H / 3), glassMat((2 * s.hz) / 3, H / 3), glassMat((2 * s.hx) / 3, (2 * s.hz) / 3), floorMat, glassMat((2 * s.hx) / 3, H / 3), glassMat((2 * s.hx) / 3, H / 3)];
+  G.add(new THREE.Mesh(g, mats));
+  const gm = (i: number) => mats[i] as THREE.MeshBasicMaterial;
+  glass.push(
+    { n: v3(-1, 0, 0), c: v3(s.hx, s.hy, 0), mat: gm(0), base: 0.17 },
+    { n: v3(1, 0, 0), c: v3(-s.hx, s.hy, 0), mat: gm(1), base: 0.17 },
+    { n: v3(0, -1, 0), c: v3(0, H, 0), mat: gm(2), base: 0.1 },
+    { n: v3(0, 0, -1), c: v3(0, s.hy, s.hz), mat: gm(4), base: 0.17 },
+    { n: v3(0, 0, 1), c: v3(0, s.hy, -s.hz), mat: gm(5), base: 0.17 },
+  );
+  const fx = s.hx - s.r, fz = s.hz - s.r;
+  const rect: [number, number][] = [[-fx, -fz], [fx, -fz], [fx, fz], [-fx, fz]];
+  const low = neon.low(), top = neon.top(), vert = neon.vert();
+  loop(G, rect, 0.02, low, 0.06);          // where the floor starts to curve up
+  loop(G, a.verts, s.r, low, 0.06);        // where the curve meets the wall
+  loop(G, a.verts, H - s.r, top, 0.06);    // top of the wall
+  loop(G, rect, H - 0.02, top, 0.06);      // where the ceiling flattens out
+  const seg = a.verts.length / 4;
+  for (let c = 0; c < 4; c++) {
+    const [x, z] = a.verts[Math.round(c * seg + (seg - 1) / 2)];
+    tube(G, x, s.r, z, x, H - s.r, z, vert, 0.07);
+  }
+  // Ribs across the curves (floor-to-wall and wall-to-ceiling), so the halfpipe shape reads.
+  const rib = (px: number, pz: number, nx: number, nz: number, top: boolean) => {
+    const cy = top ? H - s.r : s.r, pts: THREE.Vector3[] = [];
+    for (let i = 0; i <= 10; i++) {
+      const t = (i / 10) * (Math.PI / 2), out = Math.sin(t) * (s.r - 0.03), up = Math.cos(t) * (s.r - 0.03) * (top ? 1 : -1);
+      pts.push(v3(px + nx * out, cy + up, pz + nz * out));
+    }
+    curveTube(G, pts, vert, 0.035);
+  };
+  for (const top of [false, true]) {
+    for (let x = -fx; x <= fx + 1e-6; x += (2 * fx) / 4) { rib(x, fz, 0, 1, top); rib(x, -fz, 0, -1, top); }
+    for (let z = -fz; z <= fz + 1e-6; z += (2 * fz) / 2) { rib(fx, z, 1, 0, top); rib(-fx, z, -1, 0, top); }
+  }
+}
+
+/** Solid obstacles inside the arena (maze walls, the rocket's porthole): glass with neon rims. */
+function buildBlocks(G: THREE.Group, a: Arena) {
+  if (!a.blocks.length) return;
+  const H = a.top;
+  const mat = new THREE.MeshBasicMaterial({
+    color: new THREE.Color(0.5, 0.3, 1), transparent: true, opacity: 0.09,
+    blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false,
+  });
+  const low = neon.low(), top = neon.vert();
+  for (const b of a.blocks) {
+    if (b.kind === "rect") {
+      const w = b.x1 - b.x0, d = b.z1 - b.z0;
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, H, d), mat);
+      m.position.set((b.x0 + b.x1) / 2, H / 2, (b.z0 + b.z1) / 2);
+      G.add(m);
+      const c: [number, number][] = [[b.x0, b.z0], [b.x1, b.z0], [b.x1, b.z1], [b.x0, b.z1]];
+      loop(G, c, 0.03, low, 0.05);
+      loop(G, c, H, top, 0.06);
+    } else {
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(b.r, b.r, H, 40, 1, true), mat);
+      m.position.set(b.x, H / 2, b.z);
+      G.add(m);
+      const ring = (y: number) => Array.from({ length: 32 }, (_, i) => v3(b.x + Math.cos((i / 32) * TAU) * b.r, y, b.z + Math.sin((i / 32) * TAU) * b.r));
+      curveTube(G, ring(0.03), low, 0.05, true);
+      curveTube(G, ring(H), top, 0.06, true);
+      for (let k = 0; k < 4; k++) {
+        const an = (k / 4) * TAU + Math.PI / 4, x = b.x + Math.cos(an) * b.r, z = b.z + Math.sin(an) * b.r;
+        tube(G, x, 0, z, x, H, z, top, 0.05);
+      }
+    }
+  }
+}
+
+/** Stadium floodlights, placed around whatever arena is up. */
+function buildRigs(G: THREE.Group, a: Arena) {
+  const so = standOutline(a), ex = so.hx, ez = so.hz;
+  const mat = new THREE.MeshStandardMaterial({ color: 0x15131f, roughness: 0.7, metalness: 0.4 });
+  const lamp = new THREE.MeshBasicMaterial({ color: new THREE.Color(2.6, 2.5, 2.3) });
+  const h = Math.max(HY, a.top) + 9;
+  for (const [x, z] of [[-(ex + 13), -(ez + 12)], [ex + 13, -(ez + 12)], [-(ex + 17), ez + 2], [ex + 17, ez + 2]]) {
+    const pole = new THREE.Mesh(new THREE.BoxGeometry(0.6, h, 0.6), mat);
+    pole.position.set(x, h / 2, z);
+    G.add(pole);
+    const head = new THREE.Group();
+    head.position.set(x, h, z);
+    G.add(head);
+    head.lookAt(0, 2, 0);
+    head.add(new THREE.Mesh(new THREE.BoxGeometry(3.6, 1.9, 0.4), mat));
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) {
+      const p = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.62), lamp);
+      p.position.set(-1.15 + i * 1.15, -0.4 + j * 0.8, 0.21);
+      head.add(p);
+    }
+  }
+}
+
 /** Builds (or swaps to) an arena's floor, glass, neon edges and crowd stands. */
 export function setArena(index: number) {
   const idx = ARENAS[index] ? index : 0;
@@ -292,60 +526,22 @@ export function setArena(index: number) {
   arenaGroup = G;
   scene.add(G);
 
-  // Floor
+  // Floor, then glass faded on the side facing the camera.
   const { map, em } = makeFloor(a);
-  const floor = new THREE.Mesh(arenaShapeGeometry(a, true), new THREE.MeshStandardMaterial({
+  const floorMat = new THREE.MeshStandardMaterial({
     map, emissiveMap: em, emissive: 0xffffff, emissiveIntensity: 1.5, roughness: 0.38, metalness: 0.3,
-  }));
-  floor.rotation.x = -Math.PI / 2;
-  G.add(floor);
-
-  // Glass walls + ceiling, faded on the side facing the camera.
+  });
   glass = [];
-  const glassMat = (rx: number, ry: number) => {
-    const t = gridTex.clone();
-    t.needsUpdate = true;
-    t.repeat.set(rx, ry);
-    return new THREE.MeshBasicMaterial({
-      color: new THREE.Color(0.42, 0.34, 1), map: t, transparent: true, opacity: 0.16,
-      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false,
-    });
-  };
-  for (const w of a.walls) {
-    const len = Math.hypot(w.bx - w.ax, w.bz - w.az);
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(len, HY), glassMat(len / 3, HY / 3));
-    m.position.set((w.ax + w.bx) / 2, HY / 2, (w.az + w.bz) / 2);
-    m.rotation.y = Math.atan2(-w.nx, -w.nz);
-    G.add(m);
-    glass.push({ n: v3(-w.nx, 0, -w.nz), c: m.position.clone(), m, base: 0.17 });
+  if (a.shell?.kind === "roundbox") buildRoundBox(G, a, a.shell, floorMat);
+  else {
+    const floor = new THREE.Mesh(arenaShapeGeometry(a, true), floorMat);
+    floor.rotation.x = -Math.PI / 2;
+    G.add(floor);
+    if (a.shell?.kind === "sphere") buildSphere(G, a, a.shell);
+    else buildWalls(G, a);
   }
-  {
-    const isBox = a.key === "box";
-    // Box roof UVs are 0..1 across the plane; shaped roofs use metres.
-    const roof = new THREE.Mesh(arenaShapeGeometry(a, false), glassMat(isBox ? (2 * a.hx) / 3 : 1 / 3, isBox ? (2 * a.hz) / 3 : 1 / 3));
-    roof.rotation.x = -Math.PI / 2;
-    roof.position.y = HY;
-    G.add(roof);
-    glass.push({ n: v3(0, -1, 0), c: v3(0, HY, 0), m: roof, base: 0.1 });
-  }
-
-  // Neon edges: floor and ceiling outlines, plus corner posts.
-  const low = new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 0.22, 0.52).multiplyScalar(2.4) });
-  const top = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.25, 0.6, 1).multiplyScalar(2.2) });
-  const vert = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.55, 0.32, 1).multiplyScalar(2) });
-  const tube = (ax: number, ay: number, az: number, bx: number, by: number, bz: number, mat: THREE.Material, r = 0.05) => {
-    const d = v3(bx - ax, by - ay, bz - az), len = d.length();
-    const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 6, 1), mat);
-    m.position.set(ax, ay, az).addScaledVector(d, 0.5);
-    m.quaternion.setFromUnitVectors(UP, d.normalize());
-    G.add(m);
-  };
-  for (const w of a.walls) {
-    tube(w.ax, 0, w.az, w.bx, 0, w.bz, low);
-    tube(w.ax, HY, w.az, w.bx, HY, w.bz, top);
-  }
-  const postEvery = a.radius > 0 ? 6 : 1;
-  a.verts.forEach(([x, z], i) => { if (i % postEvery === 0) tube(x, 0, z, x, HY, z, vert, 0.07); });
+  buildBlocks(G, a);
+  buildRigs(G, a);
 
   // Crowd stands: five tiers behind every wall that doesn't face the camera (spiky arenas get a ring).
   const so = standOutline(a);
@@ -409,28 +605,6 @@ document.fonts?.ready.then(() => {
   ]).finally(() => { fontsReady = true; floorPaint?.(); });
 });
 
-// Light rigs
-{
-  const mat = new THREE.MeshStandardMaterial({ color: 0x15131f, roughness: 0.7, metalness: 0.4 });
-  const lamp = new THREE.MeshBasicMaterial({ color: new THREE.Color(2.6, 2.5, 2.3) });
-  for (const [x, z] of [[-(HX + 13), -(HZ + 12)], [HX + 13, -(HZ + 12)], [-(HX + 17), HZ + 2], [HX + 17, HZ + 2]]) {
-    const h = HY + 9;
-    const pole = new THREE.Mesh(new THREE.BoxGeometry(0.6, h, 0.6), mat);
-    pole.position.set(x, h / 2, z);
-    scene.add(pole);
-    const head = new THREE.Group();
-    head.position.set(x, h, z);
-    scene.add(head);
-    head.lookAt(0, 2, 0);
-    head.add(new THREE.Mesh(new THREE.BoxGeometry(3.6, 1.9, 0.4), mat));
-    for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) {
-      const p = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.62), lamp);
-      p.position.set(-1.15 + i * 1.15, -0.4 + j * 0.8, 0.21);
-      head.add(p);
-    }
-  }
-}
-
 export function updateCrowd(dt: number, rt: number) {
   crowd.excite = Math.max(0, crowd.excite - dt * 0.45);
   const fans = crowd.fans, lights = crowd.lights;
@@ -461,7 +635,7 @@ export function updateWalls(dt: number) {
     tmp.subVectors(camera.position, w.c);
     const side = tmp.dot(w.n);
     const target = w.base * smooth(clamp((side + 1) / 3, 0, 1));
-    const mat = w.m.material as THREE.MeshBasicMaterial;
+    const mat = w.mat;
     mat.opacity = approach(mat.opacity, target, dt * 0.8);
   }
 }

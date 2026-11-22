@@ -20,8 +20,8 @@
 <div id="hud" hidden>
   <header class="brand small">
     <div class="mark">OVER<span>CLOCK</span></div>
-    <div class="keys kb-only"><b>J</b>/<b>Click</b> swing (hold to charge) · <b>K</b> bunt · <b>Space</b> jump (again in air or on a wall) · <b>Shift</b> air dash · hold <b>R</b>/<b>F</b> aim high/low · hold <b>Q</b>/<b>E</b> curve · <b>Esc</b> menu</div>
-    <div class="keys pad-only"><b>X</b>/<b>RT</b> swing (hold to charge) · <b>B</b> bunt · <b>A</b> jump (again in air or on a wall) · <b>LB</b> air dash · <b>Right stick</b> aim + curve · <b>Start</b> menu</div>
+    <div class="keys kb-only" id="keysKb"></div>
+    <div class="keys pad-only" id="keysPad"></div>
   </header>
 
   <section class="speed" id="speedPanel" aria-label="Ball speed">
@@ -112,35 +112,15 @@
         </ul>
       </div>
       <div class="card controls">
-        <h2>Controls <span class="pad-status" id="padStatus">No controller</span></h2>
+        <h2>Controls <span class="pad-status" id="padStatus">No controller</span><button type="button" class="ghost remap" id="btnRemap" data-nav>Remap</button></h2>
         <div class="ctl-grid">
           <div class="ctl-col kbcol">
             <h3>Keyboard + mouse</h3>
-            <dl>
-              <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>Move</dd>
-              <dt><kbd>Space</kbd></dt><dd>Jump · double · off walls</dd>
-              <dt><kbd>Shift</kbd></dt><dd>Air dash</dd>
-              <dt><kbd>J</kbd> <kbd>Click</kbd></dt><dd>Swing · hold to charge</dd>
-              <dt><kbd>K</kbd> <kbd>R-Click</kbd></dt><dd>Bunt</dd>
-              <dt><kbd>R</kbd> / <kbd>F</kbd></dt><dd>Aim high / low</dd>
-              <dt><kbd>Q</kbd> / <kbd>E</kbd></dt><dd>Curve left / right</dd>
-              <dt><kbd>M</kbd> <kbd>Esc</kbd></dt><dd>Mute, menu</dd>
-              <dt><kbd>C</kbd></dt><dd>Director camera when spectating</dd>
-              <dt><kbd>Alt</kbd>+<kbd>Enter</kbd></dt><dd>Full screen</dd>
-            </dl>
+            <dl id="ctlKb"></dl>
           </div>
           <div class="ctl-col padcol">
             <h3>Controller</h3>
-            <dl>
-              <dt><kbd>L-Stick</kbd></dt><dd>Move</dd>
-              <dt><kbd>A</kbd></dt><dd>Jump · double · off walls</dd>
-              <dt><kbd>LB</kbd></dt><dd>Air dash</dd>
-              <dt><kbd>X</kbd> <kbd>RB</kbd> <kbd>RT</kbd></dt><dd>Swing · hold to charge</dd>
-              <dt><kbd>B</kbd> <kbd>LT</kbd></dt><dd>Bunt</dd>
-              <dt><kbd>R-Stick</kbd></dt><dd>Aim high / low · curve</dd>
-              <dt><kbd>Back</kbd> <kbd>Start</kbd></dt><dd>Mute, menu</dd>
-              <dt><kbd>Y</kbd></dt><dd>Director camera when spectating</dd>
-            </dl>
+            <dl id="ctlPad"></dl>
           </div>
         </div>
       </div>
@@ -202,7 +182,21 @@
       <button type="button" class="btn" id="btnCam" data-nav><span>Spectator camera</span><b>Arena</b></button>
       <button type="button" class="btn" id="btnSound" data-nav><span>Sound</span><b>On</b></button>
       <button type="button" class="btn" id="btnFull" data-nav><span>Full screen</span><b>Off</b></button>
+      <button type="button" class="btn" id="btnControls" data-nav><span>Controls</span></button>
       <button type="button" class="btn danger" id="btnLeave" data-nav><span>Leave match</span></button>
+    </div>
+  </section>
+
+  <!-- Controls -->
+  <section class="screen center" id="scrControls" hidden>
+    <div class="panel binds">
+      <div class="eyebrow">Controls</div>
+      <p class="qinfo" id="bindInfo"></p>
+      <div class="bindtable" id="bindTable" role="grid"></div>
+      <div class="bindbtns">
+        <button type="button" class="btn" id="btnBindReset" data-nav><span>Reset to defaults</span></button>
+        <button type="button" class="btn primary" id="btnBindDone" data-nav><span>Done</span><span class="glyph"><i class="kb-only">Esc</i><i class="pad-only">B</i></span></button>
+      </div>
     </div>
   </section>
 

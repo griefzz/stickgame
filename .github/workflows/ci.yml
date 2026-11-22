@@ -39,6 +39,7 @@ jobs:
           curl -fsS http://127.0.0.1:8787/health
           curl -fsS -o page.html http://127.0.0.1:8787/ && grep -q '<meta name="build"' page.html
           bun tools/move-check.ts | tee -a results.log
+          bun tools/bot-sim.ts 60 | tee -a results.log
           bun tools/abuse.ts ws://127.0.0.1:8787/ws | tee -a results.log
           bun tools/queue-bots.ts 4 ws://127.0.0.1:8787/ws | tee -a results.log
           bun tools/room-check.ts ws://127.0.0.1:8787/ws | tee -a results.log

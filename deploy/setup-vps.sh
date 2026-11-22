@@ -75,7 +75,7 @@ MATCH_SIZE=4
 MIN_PLAYERS=2
 FILL_WAIT=12
 # Arenas queue and practice matches pick from at random (rooms pick their own).
-#ARENAS=box,octagon,pentagon,circle,star,plus,bowtie,triangle
+#ARENAS=box,octagon,circle,star,plus,bowtie,triangle,sphere,maze,rocket,slide
 # Bots may fill empty seats up to this many (if every player in the lobby allows it). 0 = never.
 # Defaults to MATCH_SIZE.
 #BOT_FILL_TO=4

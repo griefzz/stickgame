@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { HY, PLAYER, SLOTS, SWING } from "../../shared/constants";
-import { eachPenetration } from "../../shared/arena";
+import { eachPenetration, shellDist, shellGrad } from "../../shared/arena";
 import { burst, ring } from "./fx";
 import { TAU, UP, clamp, currentArena, glowTexture, lerp, rand, scene, smooth, v3 } from "./scene";
 
@@ -354,12 +354,22 @@ export class Character {
     k.vel.y -= PLAYER.gravity * 0.55 * dt;
     k.x += k.vel.x * dt; k.z += k.vel.z * dt; k.y += k.vel.y * dt;
     // Bounce off the arena walls, whatever their shape.
-    eachPenetration(currentArena(), k.x, k.z, 0.7, (nx, nz, over) => {
+    const ar = currentArena();
+    if (ar.shell) {
+      const over = shellDist(ar.shell, k.x, k.y + 1, k.z) + 0.8;
+      if (over > 0) {
+        const g = shellGrad();
+        k.x -= g.x * over; k.y -= g.y * over; k.z -= g.z * over;
+        const vn = k.vel.x * g.x + k.vel.y * g.y + k.vel.z * g.z;
+        if (vn > 0) { k.vel.x -= 1.5 * vn * g.x; k.vel.y -= 1.5 * vn * g.y; k.vel.z -= 1.5 * vn * g.z; }
+      }
+    }
+    eachPenetration(ar, k.x, k.z, 0.7, (nx, nz, over) => {
       k.x -= nx * over; k.z -= nz * over;
       const vn = k.vel.x * nx + k.vel.z * nz;
       if (vn > 0) { k.vel.x -= 1.55 * vn * nx; k.vel.z -= 1.55 * vn * nz; }
-    });
-    if (k.y > HY - 2.2) { k.y = HY - 2.2; k.vel.y *= -0.4; }
+    }, k.y + 1);
+    if (k.y > ar.top - 2.2) { k.y = ar.top - 2.2; k.vel.y *= -0.4; }
     if (k.y < 0) { k.y = 0; k.vel.y *= -0.38; k.vel.x *= 0.7; k.vel.z *= 0.7; k.spin.multiplyScalar(0.7); }
     k.rx += k.spin.x * dt; k.rz += k.spin.z * dt;
     this.g.visible = true;

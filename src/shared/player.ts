@@ -1,5 +1,5 @@
 import { DT, PLAYER, SWING, weaponOf } from "./constants";
-import { arenaOf, constrain, wallContact } from "./arena";
+import { arenaOf, constrain, shellDist, shellGrad, wallContact, type Shell } from "./arena";
 
 // Everything the client needs to predict its own player, and the server needs
 // to simulate it. Kept flat so it serialises to a short array.
@@ -102,7 +102,7 @@ export function stepPlayer(p: PState, inp: Input, frozen: boolean): number {
 
   // The wall the player is touching, if any (for wall jumps and wall slides).
   const arena = arenaOf(p.ar);
-  const wall = wallContact(arena, p.x, p.z, PLAYER.wallMargin, PLAYER.wallReach); // outward normal, or null
+  const wall = wallContact(arena, p.x, p.z, PLAYER.wallMargin, PLAYER.wallReach, p.y + 1); // outward normal, or null
 
   if (p.ds > 0) {
     // Mid-dash: hold the dash velocity, no gravity.
@@ -144,12 +144,19 @@ export function stepPlayer(p: PState, inp: Input, frozen: boolean): number {
       if (!p.g && p.vy < -PLAYER.wallSlide && wall && mx * wall.nx + mz * wall.nz > 0.3) p.vy = -PLAYER.wallSlide;
     }
   }
-  p.y += p.vy * DT;
-  if (p.y <= 0) { p.y = 0; p.vy = 0; p.g = 1; p.aj = 0; p.dc = 0; p.wj = 0; } else p.g = 0;
-
-  p.x += p.vx * DT;
-  p.z += p.vz * DT;
-  constrain(arena, p, PLAYER.wallMargin);
+  if (arena.shell) {
+    // Curved arena: move in 3D and let the surface carry you (running into a curve rides up it).
+    p.x += p.vx * DT; p.y += p.vy * DT; p.z += p.vz * DT;
+    p.g = shellCollide(arena.shell, p) ? 1 : 0;
+    if (p.g) { p.aj = 0; p.dc = 0; p.wj = 0; }
+  } else {
+    p.y += p.vy * DT;
+    if (p.y <= 0) { p.y = 0; p.vy = 0; p.g = 1; p.aj = 0; p.dc = 0; p.wj = 0; } else p.g = 0;
+    if (p.y > arena.top - HEAD_TOP) { p.y = arena.top - HEAD_TOP; if (p.vy > 0) p.vy = 0; }
+    p.x += p.vx * DT;
+    p.z += p.vz * DT;
+    constrain(arena, p, PLAYER.wallMargin);
+  }
 
   if ((inp.b & (B_SWING | B_BUNT)) && p.cd <= 0) {
     const bunt = !(inp.b & B_SWING);
@@ -159,6 +166,33 @@ export function stepPlayer(p: PState, inp: Input, frozen: boolean): number {
     return bunt ? 2 : 1;
   }
   return 0;
+}
+
+// Player collision against a shell: a sphere at the feet and one at the head.
+const FEET_R = PLAYER.wallMargin, HEAD_UP = 1.3, HEAD_R = 0.45, HEAD_TOP = HEAD_UP + HEAD_R;
+/** Pushes the player back inside the shell, sliding along it. True if standing on it. */
+function shellCollide(s: Shell, p: PState): boolean {
+  let ground = false;
+  for (const [up, r] of [[FEET_R, FEET_R], [HEAD_UP, HEAD_R]]) {
+    for (let pass = 0; pass < 4; pass++) {
+      const over = shellDist(s, p.x, p.y + up, p.z) + r;
+      if (over <= 0) break;
+      const g = shellGrad();
+      p.x -= g.x * over; p.y -= g.y * over; p.z -= g.z * over;
+      const vn = p.vx * g.x + p.vy * g.y + p.vz * g.z;
+      if (vn > 0) { p.vx -= vn * g.x; p.vy -= vn * g.y; p.vz -= vn * g.z; }
+      if (up === FEET_R && g.y < -0.45) ground = true;
+    }
+  }
+  if (p.y < 0) { p.y = 0; if (p.vy < 0) p.vy = 0; ground = true; }
+  return ground;
+}
+
+/** Pushes a player back inside the arena after an outside nudge (players shoving apart). */
+export function settle(p: PState) {
+  const a = arenaOf(p.ar);
+  if (a.shell) shellCollide(a.shell, p);
+  else constrain(a, p, PLAYER.wallMargin);
 }
 
 /** Hitbox sphere centre for a player (feet position + facing). */

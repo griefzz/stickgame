@@ -12,12 +12,14 @@ Enter a name and pick **Find a match**, **Practice vs bots**, or **Play with fri
 
 **Play with friends** opens a private room with a 4-letter code. Share the link (`…/?room=K7QF`) or the code; the host can let bots fill empty seats and starts the match. When a match ends everyone lands back in the room for a rematch. The version (`build N · commit`) shows in the bottom-left corner, and a server reports its version at `/health`.
 
+Every button can be remapped: **Remap** on the title screen's controls card, or **Controls** in the pause menu. Each action gets two keyboard/mouse slots and two controller slots, saved in your browser. These are the defaults:
+
 | Action | Keyboard + mouse | Controller |
 |---|---|---|
 | Move | `W` `A` `S` `D` | Left stick |
 | Jump, double jump, wall jump | `Space`; again in the air or against a wall | `A`; same |
 | Air dash | `Shift` | `LB` |
-| Swing (keep holding after a hit to charge) | `J` or left click | `X`, `RB` or `RT` |
+| Swing (keep holding after a hit to charge) | `J` or left click | `X` or `RT` |
 | Bunt | `K` or right click | `B` or `LT` |
 | Aim high / low | Hold `R` / `F` | Right stick up / down |
 | Curve left / right | Hold `Q` / `E` | Right stick left / right |
@@ -35,10 +37,17 @@ Enter a name and pick **Find a match**, **Practice vs bots**, or **Play with fri
   - **Arc racket (Reach):** 20% bigger hit zone, hits 5% softer.
   - **Rail staff (Timing):** 75 ms perfect window, quick recovery.
   - **Slab paddle (Spin):** curves bend 40% tighter, charges twice as fast.
-- **Arenas:** box, octagon, pentagon, circle, star, plus, bowtie and triangle. Bounces follow each wall's angle, and the star, plus and bowtie have inward corners that throw the ball off at odd angles. Queue and practice matches pick one at random; in a private room the host picks.
+- **Arenas:** queue and practice matches pick one at random. In a private room the host picks, and the arena shows behind the room screen so everyone can see it before the match.
+  - **Box, octagon, circle, triangle:** flat walls; bounces follow each wall's angle.
+  - **Star, plus, bowtie:** inward corners throw the ball off at odd angles.
+  - **Rocket:** a rocket on its side with a porthole pillar in the body.
+  - **Maze:** a big, low (7 m) arena full of inner walls, played from a top-down camera.
+  - **Sphere:** a glass bowl. Run at the curved wall and you ride up it; shots bounce off the curve in 3D.
+  - **Slide:** a long box with curved edges everywhere, like a car-soccer pitch. Run up the curves onto the walls, and wall jump off them.
 - **Camera:** one fixed arena camera while you play. Once you're out of the set you can switch to the director camera, which orbits and punches in on big hits.
-- **Wavedash:** press jump and dash together to skid along the floor at dash speed. Landing refunds the dash, so it chains at about twice running speed. The bots use it too.
-- **Movement:** you get one double jump and one air dash per jump, and up to three wall jumps before landing. Each wall jump gives back the double jump and dash. Pushing into a wall while falling slows you to a slide.
+- **Wavedash:** press jump and dash together to skid along the floor at dash speed. Landing refunds the dash, so it chains at about twice running speed.
+- **Bots** chase the ball efficiently, but with spare time they freestyle: zig-zag wavedash chains, wall-jump combos, feints, mid-air reversals and orbits around the ball. Each bot gets its own amount of flair.
+- **Movement:** running speed is 13.3 m/s and an air dash hits 29 m/s. You get one double jump and one air dash per jump, and up to three wall jumps before landing. Each wall jump gives back the double jump and dash. Pushing into a wall while falling slows you to a slide.
 
 ## Develop
 
@@ -60,7 +69,8 @@ Open <http://localhost:8787> in two browser windows to play against yourself.
 | `bun tools/abuse.ts [ws-url]` | Queue/leave spam can't fill slots or leak matches |
 | `bun tools/room-check.ts [ws-url]` | Private rooms: create, join, start, rematch, host handover |
 | `bun tools/charge-check.ts [ws-url]` | Weapon choice and charged shots in a practice match |
-| `bun tools/move-check.ts` | Movement and ball-physics unit checks (jumps, wall jumps, dash, curve) |
+| `bun tools/move-check.ts` | Movement and ball-physics unit checks (jumps, wall jumps, dash, curve, every arena's walls and curves) |
+| `bun tools/bot-sim.ts [seconds]` | Headless 4-bot matches on every arena: bots rally, freestyle and never leave the arena |
 | `bun tools/soak.ts <matches> <seconds> [ws-url]` | Load test with concurrent bot matches |
 | `bun tools/ws-check.ts [ws-url]` | Connects and waits for the server's welcome |
 | `bun tools/hold-match.ts [ws-url] [seconds]` | Keeps a practice match running (CI uses it to test that updates wait for matches) |
@@ -138,7 +148,7 @@ On a server, edit `/etc/overclock/overclock.env`, then run `sudo systemctl resta
 | `MIN_PLAYERS` | `2` | Fewest humans the queue will start a match with |
 | `FILL_WAIT` | `12` | Seconds to wait for a full lobby once `MIN_PLAYERS` are queued |
 | `BOT_FILL_TO` | `MATCH_SIZE` | When the wait runs out, bots top the match up to this many seats, but only if every player in the lobby has **Fill empty seats with bots** on. `0` turns bots off for queue matches and hides the toggle. |
-| `ARENAS` | all eight | Arenas queue and practice matches pick from at random, e.g. `box,octagon,star` |
+| `ARENAS` | all of them | Arenas queue and practice matches pick from at random, e.g. `box,octagon,star`. Keys: `box octagon circle star plus bowtie triangle sphere maze rocket slide` |
 | `MAX_CONNS` | `400` | Connection cap |
 | `PORT` | `8787` | Listen port. On a server it's set in the service file, and nginx expects 8787. |
 | `HOST` | `0.0.0.0` | Bind address. The service uses `127.0.0.1`, behind nginx. |

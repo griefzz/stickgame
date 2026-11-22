@@ -3,7 +3,7 @@ import {
   BALL_SPAWN, DT, HX, KO_HOLD, MAX_PLAYERS, PLAYER, SLOTS, SPEED_NEUTRAL, SWING, displaySpeed, speedFeel, weaponOf,
 } from "../shared/constants";
 import { advanceBall, newKin, type BallKin } from "../shared/ball";
-import { arenaOf, wallContact } from "../shared/arena";
+import { arenaOf, serveY, wallContact } from "../shared/arena";
 import {
   B_BUNT, B_DASH, B_JUMP, B_JUMP_P, B_SWING, B_SWING_HELD, copyP, hurtDist2, newPState, q3, stepPlayer, type Input, type PState,
 } from "../shared/player";
@@ -168,7 +168,7 @@ export class ClientMatch {
         sfx.beep(true);
         break;
       case "serve": {
-        const p = BALL_SPAWN;
+        const p = { x: BALL_SPAWN.x, y: serveY(arenaOf(this.arena)), z: BALL_SPAWN.z };
         ring(p, { color: WHITE, from: 0.3, to: 3.5, life: 0.6, peak: 0.9 });
         burst(p, 40, { color: WHITE, speed: [2, 7], life: [0.3, 0.8], size: [0.06, 0.14], drag: 2.5 });
         sfx.serve();
@@ -460,7 +460,7 @@ export class ClientMatch {
       const wj = local ? this.pred.wj : (L?.p[i]?.[P_WALLJ] ?? 0);
       if (v && v.alive && wj > this.lastWj[i]) {
         // The wall they kicked off: nearest wall's outward normal (n), ring faces back inward.
-        const wc = wallContact(arenaOf(this.arena), v.x, v.z, PLAYER.wallMargin, 0.6);
+        const wc = wallContact(arenaOf(this.arena), v.x, v.z, PLAYER.wallMargin, 0.6, v.y + 1);
         const nx = wc ? -wc.nx : 0, nz = wc ? -wc.nz : 1;
         const at = { x: v.x - nx * 0.6, y: v.y + 1, z: v.z - nz * 0.6 };
         ring(at, { color: chars[i].color, normal: v3(nx, 0, nz), from: 0.3, to: 2.2, life: 0.4, peak: 0.9 });

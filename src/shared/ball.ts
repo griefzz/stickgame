@@ -1,5 +1,5 @@
-import { BALL_R, BY0, BY1, LOB_GRAVITY } from "./constants";
-import { arenaOf, constrain, deepestPenetration } from "./arena";
+import { BALL_R, BY0, LOB_GRAVITY } from "./constants";
+import { arenaOf, constrain, deepestPenetration, shellDist, shellGrad, type Arena, type Shell } from "./arena";
 
 export interface BallKin {
   x: number; y: number; z: number;
@@ -24,9 +24,8 @@ export function substepsFor(b: BallKin, dt: number): number {
   return Math.max(1, Math.min(24, Math.ceil(d / SUBSTEP_LEN)));
 }
 
-/** Side walls: reflect off whichever wall(s) the ball crossed. e = 1 for a perfect bounce. */
-function walls(b: BallKin, e: number, cb?: BounceFn) {
-  const a = arenaOf(b.ar);
+/** Side walls and blocks: reflect off whichever wall(s) the ball crossed. e = 1 for a perfect bounce. */
+function walls(b: BallKin, a: Arena, e: number, cb?: BounceFn) {
   for (let pass = 0; pass < 4; pass++) {
     const w = deepestPenetration(a, b.x, b.z, BALL_R);
     if (!w) return;
@@ -41,24 +40,48 @@ function walls(b: BallKin, e: number, cb?: BounceFn) {
   constrain(a, b, BALL_R);
 }
 
-function floorCeilLine(b: BallKin, cb?: BounceFn) {
+/** Curved 3D shells (sphere, slide): reflect off the surface normal in full 3D. */
+function shellBounce(b: BallKin, s: Shell, e: number, cb?: BounceFn) {
+  for (let pass = 0; pass < 4; pass++) {
+    const over = shellDist(s, b.x, b.y, b.z) + BALL_R;
+    if (over <= 0) return;
+    const g = shellGrad();
+    const vn = b.vx * g.x + b.vy * g.y + b.vz * g.z;
+    if (e < 1 && g.y < -0.9 && vn < 1.6 / 0.72) {
+      // Lob settling on the flat floor: stop bouncing, keep rolling.
+      b.x -= over * g.x; b.y -= over * g.y; b.z -= over * g.z;
+      b.vy = 0; b.y = BY0;
+      b.vx *= 0.9; b.vz *= 0.9;
+      continue;
+    }
+    b.x -= (1 + e) * over * g.x; b.y -= (1 + e) * over * g.y; b.z -= (1 + e) * over * g.z;
+    if (vn > 0) { b.vx -= (1 + e) * vn * g.x; b.vy -= (1 + e) * vn * g.y; b.vz -= (1 + e) * vn * g.z; }
+    if (e < 1 && g.y < -0.5) { b.vx *= 0.9; b.vz *= 0.9; }
+    b.cv = 0; b.ct = 0;
+    if (cb && (e === 1 || vn > 2)) cb(-g.x, -g.y, -g.z, b.x, b.y, b.z, Math.abs(vn));
+  }
+}
+
+function floorCeilLine(b: BallKin, top: number, cb?: BounceFn) {
+  const hi = top - BALL_R;
   for (let guard = 0; guard < 8; guard++) {
     let side: number;
     if (b.y < BY0) { b.y = 2 * BY0 - b.y; side = -1; }
-    else if (b.y > BY1) { b.y = 2 * BY1 - b.y; side = 1; }
+    else if (b.y > hi) { b.y = 2 * hi - b.y; side = 1; }
     else return;
     b.vy = -b.vy;
     b.cv = 0; b.ct = 0;
     if (cb) cb(0, -side, 0, b.x, b.y, b.z, Math.abs(b.vy));
   }
-  b.y = Math.min(BY1, Math.max(BY0, b.y));
+  b.y = Math.min(hi, Math.max(BY0, b.y));
 }
 
-function floorCeilLob(b: BallKin, cb?: BounceFn) {
+function floorCeilLob(b: BallKin, top: number, cb?: BounceFn) {
+  const hi = top - BALL_R;
   const p = b.y, v = b.vy;
   let side = 0, np = p;
   if (p < BY0) { np = BY0 + (BY0 - p) * 0.72; side = -1; }
-  else if (p > BY1) { np = BY1 - (p - BY1) * 0.72; side = 1; }
+  else if (p > hi) { np = hi - (p - hi) * 0.72; side = 1; }
   if (!side) return;
   let nv = -v * 0.72;
   if (side === -1) {
@@ -72,6 +95,7 @@ function floorCeilLob(b: BallKin, cb?: BounceFn) {
 
 /** Advance the ball by dt (call with small dt: one substep). */
 export function advanceBall(b: BallKin, dt: number, cb?: BounceFn) {
+  const a = arenaOf(b.ar);
   if (b.lob) {
     const resting = b.y <= BY0 + 1e-4 && b.vy === 0;
     if (resting) {
@@ -81,25 +105,25 @@ export function advanceBall(b: BallKin, dt: number, cb?: BounceFn) {
       b.vy -= LOB_GRAVITY * dt;
     }
     b.x += b.vx * dt; b.y += b.vy * dt; b.z += b.vz * dt;
-    walls(b, 0.85, cb);
-    floorCeilLob(b, cb);
+    if (a.shell) shellBounce(b, a.shell, 0.72, cb);
+    else { walls(b, a, 0.85, cb); floorCeilLob(b, a.top, cb); }
     return;
   }
   if (b.cv !== 0) {
     // Curve: turn the horizontal velocity by (curvature x distance travelled), so the
     // arc has the same shape at any speed. Stops once the turn budget is spent.
     let th = b.cv * Math.hypot(b.vx, b.vz) * dt;
-    const a = th < 0 ? -th : th;
-    if (a >= b.ct) { th = th < 0 ? -b.ct : b.ct; b.cv = 0; b.ct = 0; }
-    else b.ct -= a;
+    const ab = th < 0 ? -th : th;
+    if (ab >= b.ct) { th = th < 0 ? -b.ct : b.ct; b.cv = 0; b.ct = 0; }
+    else b.ct -= ab;
     const c = Math.cos(th), s = Math.sin(th);
     const vx = b.vx * c - b.vz * s;
     b.vz = b.vx * s + b.vz * c;
     b.vx = vx;
   }
   b.x += b.vx * dt; b.y += b.vy * dt; b.z += b.vz * dt;
-  walls(b, 1, cb);
-  floorCeilLine(b, cb);
+  if (a.shell) shellBounce(b, a.shell, 1, cb);
+  else { walls(b, a, 1, cb); floorCeilLine(b, a.top, cb); }
 }
 
 /** Advance by a full frame/tick using adequate substeps. */

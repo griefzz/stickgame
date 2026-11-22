@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { OVERCLOCK_SPEED, SLOTS, STOCKS, displaySpeed, speedFeel, weaponOf } from "../shared/constants";
 import type { RosterEntry } from "../shared/protocol";
 import { camera, clamp, reducedMotion } from "./render/scene";
+import { firstKb, firstPad } from "./binds";
 
 const $ = (id: string) => document.getElementById(id)!;
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -197,6 +198,6 @@ export function spectateHint(on: boolean, director: boolean) {
   specEl.hidden = !on;
   if (on) {
     specEl.innerHTML = `Spectating · director camera <b>${director ? "on" : "off"}</b> · ` +
-      `<span class="kb-only">press <b>C</b></span><span class="pad-only">press <b>Y</b></span> to switch`;
+      `<span class="kb-only">press <b>${firstKb("cam")}</b></span><span class="pad-only">press <b>${firstPad("cam")}</b></span> to switch`;
   }
 }

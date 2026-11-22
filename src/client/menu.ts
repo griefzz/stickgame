@@ -2,9 +2,12 @@ import { NAME_MAX, SLOTS, WEAPONS } from "../shared/constants";
 import { ARENAS } from "../shared/arena";
 import type { RoomState, RosterEntry } from "../shared/protocol";
 import { sfx } from "./audio";
-import type { UiEvent } from "./input";
+import { captureNext, type UiEvent } from "./input";
+import {
+  ACTIONS, SLOTS as BIND_SLOTS, kbBinds, kbHtml, keyLabel, onBindsChange, padBinds, padHtml, padLabel, resetBinds, setKb, setPad, type Action,
+} from "./binds";
 
-export type Screen = "title" | "queue" | "room" | "pause" | "results" | "none";
+export type Screen = "title" | "queue" | "room" | "pause" | "results" | "controls" | "none";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -15,6 +18,7 @@ const screens: Record<Exclude<Screen, "none">, HTMLElement> = {
   room: $("scrRoom"),
   pause: $("scrPause"),
   results: $("scrResults"),
+  controls: $("scrControls"),
 };
 
 const ADJ = ["NEON", "TURBO", "HYPER", "IRON", "VOLT", "LUCKY", "RAPID", "COSMIC", "PIXEL", "ROGUE", "SONIC", "ATOMIC"];
@@ -134,6 +138,12 @@ export class Menu {
     document.querySelectorAll<HTMLElement>("#menu [data-nav]").forEach((b) => {
       b.addEventListener("mouseenter", () => this.setNavFocus(b, false));
     });
+    $("btnRemap").addEventListener("click", () => this.openControls());
+    $("btnControls").addEventListener("click", () => this.openControls());
+    $("btnBindReset").addEventListener("click", () => { resetBinds(); this.bindNote("Controls reset to the defaults."); });
+    $("btnBindDone").addEventListener("click", () => this.closeControls());
+    onBindsChange(() => this.renderControls());
+    this.renderControls();
     this.show("title");
   }
 
@@ -153,7 +163,7 @@ export class Menu {
   show(s: Screen) {
     this.screen = s;
     $("menu").hidden = s === "none";
-    $("menu").classList.toggle("overlay", s === "pause" || s === "results");
+    $("menu").classList.toggle("overlay", s === "pause" || s === "results" || (s === "controls" && this.controlsFrom === "pause"));
     for (const [k, el] of Object.entries(screens)) el.hidden = k !== s;
     if (s === "queue") this.queuedAt = performance.now();
     if (s !== "none") {
@@ -181,6 +191,16 @@ export class Menu {
     // Left/right on the weapon picker changes the weapon instead of moving focus.
     if ((e === "left" || e === "right") && (document.activeElement === this.weaponBtn || document.activeElement === this.roomWeaponBtn)) { this.cycleWeapon(e === "left" ? -1 : 1); return; }
     if ((e === "left" || e === "right") && document.activeElement === this.roomArenaBtn) { this.cycleRoomArena(e === "left" ? -1 : 1); return; }
+    if ((e === "up" || e === "down") && cur >= 0 && items[cur].dataset.row !== undefined) {
+      // Bind table: up/down keeps the column.
+      const r = +items[cur].dataset.row! + (e === "up" ? -1 : 1), c = +items[cur].dataset.col!;
+      const row = items.filter((x) => x.dataset.row === String(r));
+      if (row.length) {
+        this.setNavFocus(row.reduce((a, x) => (Math.abs(+x.dataset.col! - c) < Math.abs(+a.dataset.col! - c) ? x : a)));
+        return;
+      }
+      if (e === "down") { const after = items.slice(cur).find((x) => x.dataset.row === undefined); if (after) { this.setNavFocus(after); return; } }
+    }
     if (e === "up" || e === "left" || e === "down" || e === "right") {
       if (!items.length) return;
       const d = e === "up" || e === "left" ? -1 : 1;
@@ -200,7 +220,103 @@ export class Menu {
       if (this.screen === "queue") this.onCancel();
       else if (this.screen === "pause") this.onResume();
       else if (this.screen === "results") this.onMenu();
+      else if (this.screen === "controls") this.closeControls();
     }
+  }
+
+  // ---------------------------------------------------------------- controls (remapping)
+
+  controlsFrom: Screen = "title";
+
+  openControls() {
+    if (this.screen === "controls") return;
+    this.controlsFrom = this.screen;
+    this.bindNote();
+    this.show("controls");
+  }
+
+  closeControls() {
+    this.show(this.controlsFrom === "controls" || this.controlsFrom === "none" ? "title" : this.controlsFrom);
+  }
+
+  bindNote(text?: string) {
+    $("bindInfo").textContent = text ?? "Pick a slot, then press the key, mouse button or controller button for it. A key can only do one thing, so it moves off anything else that had it.";
+  }
+
+  /** Controls card, in-match key hints and the remap table, from the current bindings. */
+  renderControls() {
+    const first = (a: Action) => `<kbd>${keyLabel(kbBinds(a).find(Boolean) ?? "")}</kbd>`;
+    const row = (k: string, d: string) => `<dt>${k}</dt><dd>${d}</dd>`;
+    $("ctlKb").innerHTML = [
+      row(first("up") + first("left") + first("down") + first("right"), "Move"),
+      row(kbHtml("jump"), "Jump · double · off walls"),
+      row(kbHtml("dash"), "Air dash"),
+      row(kbHtml("swing"), "Swing · hold to charge"),
+      row(kbHtml("bunt"), "Bunt"),
+      row(`${kbHtml("aimHigh")} / ${kbHtml("aimLow")}`, "Aim high / low"),
+      row(`${kbHtml("curveL")} / ${kbHtml("curveR")}`, "Curve left / right"),
+      row(`${kbHtml("mute")} <kbd>Esc</kbd>`, "Mute, menu"),
+      row(kbHtml("cam"), "Director camera when spectating"),
+      row("<kbd>Alt</kbd>+<kbd>Enter</kbd>", "Full screen"),
+    ].join("");
+    $("ctlPad").innerHTML = [
+      row("<kbd>L-Stick</kbd>", "Move"),
+      row(padHtml("jump"), "Jump · double · off walls"),
+      row(padHtml("dash"), "Air dash"),
+      row(padHtml("swing"), "Swing · hold to charge"),
+      row(padHtml("bunt"), "Bunt"),
+      row("<kbd>R-Stick</kbd>", "Aim high / low · curve"),
+      row(`${padHtml("mute")} <kbd>Start</kbd>`, "Mute, menu"),
+      row(padHtml("cam"), "Director camera when spectating"),
+    ].join("");
+    const b = (a: Action) => kbBinds(a).filter(Boolean).map((c) => `<b>${keyLabel(c)}</b>`).join("/") || "<b>—</b>";
+    const p = (a: Action) => padBinds(a).filter((i) => i >= 0).map((i) => `<b>${padLabel(i)}</b>`).join("/") || "<b>—</b>";
+    $("keysKb").innerHTML = `${b("swing")} swing (hold to charge) · ${b("bunt")} bunt · ${b("jump")} jump (again in air or on a wall) · ${b("dash")} air dash · hold ${b("aimHigh")}/${b("aimLow")} aim high/low · hold ${b("curveL")}/${b("curveR")} curve · <b>Esc</b> menu`;
+    $("keysPad").innerHTML = `${p("swing")} swing (hold to charge) · ${p("bunt")} bunt · ${p("jump")} jump (again in air or on a wall) · ${p("dash")} air dash · <b>Right stick</b> aim + curve · <b>Start</b> menu`;
+
+    // Remap table: action | key | alt key | pad | alt pad.
+    const focused = document.querySelector<HTMLElement>("#bindTable .nav-focus");
+    const fr = focused?.dataset.row, fc = focused?.dataset.col;
+    const cells: string[] = ['<div class="bh"></div><div class="bh">Key</div><div class="bh">Alt key</div><div class="bh">Controller</div><div class="bh">Alt</div>'];
+    ACTIONS.forEach((a, r) => {
+      cells.push(`<div class="bl">${esc(a.label)}</div>`);
+      for (let i = 0; i < BIND_SLOTS; i++) {
+        const c = kbBinds(a.id)[i] ?? "";
+        cells.push(`<button type="button" class="bind${c ? "" : " empty"}" data-nav data-row="${r}" data-col="${i}" data-a="${a.id}" data-k="kb" data-i="${i}">${esc(keyLabel(c))}</button>`);
+      }
+      if (a.pad) {
+        for (let i = 0; i < BIND_SLOTS; i++) {
+          const c = padBinds(a.id)[i] ?? -1;
+          cells.push(`<button type="button" class="bind${c >= 0 ? "" : " empty"}" data-nav data-row="${r}" data-col="${2 + i}" data-a="${a.id}" data-k="pad" data-i="${i}">${esc(padLabel(c))}</button>`);
+        }
+      } else cells.push(`<div class="fixed">${a.id === "up" || a.id === "down" || a.id === "left" || a.id === "right" ? "Left stick" : "Right stick"}</div>`);
+    });
+    const table = $("bindTable");
+    table.innerHTML = cells.join("");
+    table.querySelectorAll<HTMLButtonElement>(".bind").forEach((el) => {
+      el.addEventListener("mouseenter", () => this.setNavFocus(el, false));
+      el.addEventListener("click", () => this.startCapture(el));
+    });
+    if (this.screen === "controls" && fr !== undefined) {
+      const back = table.querySelector<HTMLElement>(`.bind[data-row="${fr}"][data-col="${fc}"]`);
+      if (back) this.setNavFocus(back, false);
+    }
+  }
+
+  startCapture(el: HTMLElement) {
+    const a = el.dataset.a as Action, kind = el.dataset.k as "kb" | "pad", slot = +el.dataset.i!;
+    el.classList.add("listening");
+    el.textContent = "Press…";
+    this.bindNote(kind === "kb"
+      ? `${ACTIONS.find((x) => x.id === a)!.label}: press a key or mouse button. Esc cancels, Backspace clears.`
+      : `${ACTIONS.find((x) => x.id === a)!.label}: press a controller button. Start cancels, Backspace clears.`);
+    captureNext(kind, (v) => {
+      if (v === null) { this.bindNote(); this.renderControls(); return; }
+      if (kind === "kb") setKb(a, slot, v as string);
+      else setPad(a, slot, v as number);
+      this.bindNote();
+      sfx.ui();
+    });
   }
 
   setConnection(status: "connecting" | "open" | "closed") {

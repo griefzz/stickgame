@@ -8,7 +8,8 @@ import { Net } from "./net";
 import { setTelegraph, updateBall } from "./render/ball";
 import { directorPref, setDirectorPref } from "./render/camera";
 import { updateFx } from "./render/fx";
-import { WHITE, camera, render, updateCrowd, updateWalls } from "./render/scene";
+import { WHITE, camera, currentArena, render, setArena, updateCrowd, updateWalls } from "./render/scene";
+import { serveY } from "../shared/arena";
 
 declare const __BUILD__: string; // injected by build.ts
 declare const __VERSION__: string; // injected by build.ts
@@ -70,6 +71,8 @@ net.onMsg = (m: ServerMsg) => {
     case "rm":
       menu.setRoom(m);
       setRoomParam(m.code);
+      // Preview the room's arena behind the menu (a random pick keeps whatever is showing).
+      if (!match && m.arena >= 0) setArena(m.arena);
       // Don't pull anyone out of a match or off the results screen; they come back via "Back to room".
       if (!match && menu.screen !== "room") menu.show("room");
       break;
@@ -223,14 +226,22 @@ window.addEventListener("blur", () => { if (match && !match.over && !paused) set
 // ------------------------------------------------------------------ loop
 
 function attract(dt: number, rt: number) {
-  const a = rt * 0.06;
-  camera.position.set(Math.sin(a) * 34, 12 + Math.sin(rt * 0.13) * 2, Math.cos(a) * 34);
-  camera.lookAt(0, 4, 0);
+  // Slow orbit around whatever arena is up (bigger and taller ones pull the camera out).
+  const ar = currentArena(), a = rt * 0.06;
+  const ex = Math.max(ar.shell?.kind === "sphere" ? ar.shell.r : ar.hx, ar.hz * 1.3), tall = Math.max(0, ar.top - 12);
+  const R = 34 * Math.max(1, ex / 15) + tall * 0.8;
+  if (ar.view === "top") {
+    camera.position.set(Math.sin(a) * R * 0.4, R * 1.22, Math.cos(a) * R * 0.4);
+    camera.lookAt(0, 0, 0);
+  } else {
+    camera.position.set(Math.sin(a) * R, 12 + tall * 0.6 + Math.sin(rt * 0.13) * 2, Math.cos(a) * R);
+    camera.lookAt(0, 4 + tall * 0.35, 0);
+  }
   if (Math.abs(camera.fov - 42) > 0.01) { camera.fov = 42; camera.updateProjectionMatrix(); }
   camera.updateMatrixWorld();
   setTelegraph(false);
   updateBall(dt, rt, rt, {
-    visible: true, x: BALL_SPAWN.x, y: BALL_SPAWN.y - 3 + Math.sin(rt * 1.6) * 0.3, z: BALL_SPAWN.z,
+    visible: true, x: BALL_SPAWN.x, y: serveY(currentArena()) - 3 + Math.sin(rt * 1.6) * 0.3, z: BALL_SPAWN.z,
     color: WHITE, speedFrac: SPEED_NEUTRAL / 165, frozen: false, bigFreeze: false,
   });
 }

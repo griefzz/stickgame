@@ -4,14 +4,14 @@ import {
   CHARGE, PERFECT, SERVE_HOVER, SPAWNS, SPEED_FIRST, SPEED_MAX, SPEED_NEUTRAL, STOCKS, SWING, WEAPONS, hitstopFor, speedGain, weaponOf,
 } from "../shared/constants";
 import { advanceBall, substepsFor, type BallKin } from "../shared/ball";
-import { B_ALL, B_SWING_HELD, hitCentre, hurtDist2, newPState, q3, stepPlayer, type Input, type PState } from "../shared/player";
+import { B_ALL, B_SWING_HELD, hitCentre, hurtDist2, newPState, q3, settle, stepPlayer, type Input, type PState } from "../shared/player";
 import { shotDir } from "../shared/shot";
 import {
   BS_FLIGHT, BS_GONE, BS_HITSTOP, BS_NONE, BS_PENDING, BS_SERVE, PF_ALIVE, PF_FROZEN, PF_GONE,
   PF_INVULN, PF_OUT, PH_COUNTDOWN, PH_OVER, PH_PLAY, encodeP, type RosterEntry,
 } from "../shared/protocol";
 import { Bot } from "./bot";
-import { ARENAS, arenaOf, randomPoint, spawnPoint } from "../shared/arena";
+import { ARENAS, arenaOf, randomPoint, serveY, spawnPoint } from "../shared/arena";
 
 export type Entrant = { conn: Conn | null; name: string; bot: boolean; w: number };
 
@@ -122,7 +122,7 @@ export class Match {
       if (e.conn) { e.conn.match = this; e.conn.slot = i; e.conn.state = "match"; }
     }
     this.ball = {
-      st: BS_NONE, k: { x: BALL_SPAWN.x, y: BALL_SPAWN.y, z: BALL_SPAWN.z, vx: 0, vy: 0, vz: 0, lob: false, cv: 0, ct: 0, ar: this.arena },
+      st: BS_NONE, k: { x: BALL_SPAWN.x, y: serveY(arenaOf(this.arena)), z: BALL_SPAWN.z, vx: 0, vy: 0, vz: 0, lob: false, cv: 0, ct: 0, ar: this.arena },
       owner: -1, hitter: -1, speed: SPEED_NEUTRAL, hits: 0, epoch: 0, t1: 0, bunt: false, perfect: false, charge: 0, chargeBase: 0, gain: 0, pend: null,
     };
     const roster: (RosterEntry | null)[] = this.slots.map((s) => (s ? { n: s.name, b: s.bot ? 1 : 0, w: s.weapon } : null));
@@ -227,7 +227,7 @@ export class Match {
     if (this.phase !== PH_PLAY) return;
     const b = this.ball;
     b.st = BS_SERVE;
-    b.k.x = BALL_SPAWN.x; b.k.y = BALL_SPAWN.y; b.k.z = BALL_SPAWN.z;
+    b.k.x = BALL_SPAWN.x; b.k.y = serveY(arenaOf(this.arena)); b.k.z = BALL_SPAWN.z;
     b.k.vx = b.k.vy = b.k.vz = 0; b.k.lob = false; b.k.cv = 0; b.k.ct = 0;
     b.owner = -1; b.hitter = -1; b.speed = SPEED_NEUTRAL; b.hits = 0; b.epoch++;
     b.t1 = this.t + SERVE_HOVER; b.pend = null; b.bunt = false;
@@ -491,8 +491,8 @@ export class Match {
         const d = Math.hypot(dx, dz);
         if (d < r && d > 1e-4 && Math.abs(a.p.y - b.p.y) < 2) {
           const k = ((r - d) * 0.25) / d;
-          if (!a.frozen) { a.p.x += dx * k; a.p.z += dz * k; }
-          if (!b.frozen) { b.p.x -= dx * k; b.p.z -= dz * k; }
+          if (!a.frozen) { a.p.x += dx * k; a.p.z += dz * k; settle(a.p); }
+          if (!b.frozen) { b.p.x -= dx * k; b.p.z -= dz * k; settle(b.p); }
         }
       }
     }

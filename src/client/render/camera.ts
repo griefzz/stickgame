@@ -44,19 +44,27 @@ export function updateCamera(dt: number, rt: number, ball: { x: number; y: numbe
   const aspect = camera.aspect;
   const ar = currentArena();
   // Wider or deeper arenas than the 30 x 20 box pull the camera back to keep it all in view.
-  const dist = 31 * Math.pow(Math.max(1, 1.45 / aspect), 0.85) * Math.max(1, ar.hx / 15) + Math.max(0, ar.hz - 10) * 1.25;
+  const ex = ar.shell?.kind === "sphere" ? ar.shell.r : ar.hx, tall = Math.max(0, ar.top - 12);
+  const dist = 31 * Math.pow(Math.max(1, 1.45 / aspect), 0.85) * Math.max(1, ex / 15) + Math.max(0, ar.hz - 10) * 1.25 + tall * 0.8;
   const bx = ball.on ? ball.x : 0, by = ball.on ? ball.y : 3, bz = ball.on ? ball.z : 0;
   let fov = 42, rate = 3.2;
-  if (rig.mode === "arena") {
+  if (ar.view === "top") {
+    // Overhead (maze): the whole floor in view, tilted a touch so players still read as figures.
+    const u = Math.tan((23 * Math.PI) / 180);
+    const D = Math.max((ar.hz + 3) / u, (ar.hx + 2) / (u * aspect)) + 8; // room for the HUD top and bottom
+    tPos.set(0, D * 0.95, D * 0.31);
+    tLook.set(0, 0, 0.4);
+    fov = 46;
+  } else if (rig.mode === "arena") {
     const mx = me ? me.x : 0, mz = me ? me.z : 0;
-    tLook.set(bx * 0.26 + mx * 0.1, 3.3 + by * 0.15, bz * 0.18 + mz * 0.08);
-    tPos.set(tLook.x * 0.45, 14, dist);
+    tLook.set(bx * 0.26 + mx * 0.1, 3.3 + by * 0.15 + tall * 0.35, bz * 0.18 + mz * 0.08);
+    tPos.set(tLook.x * 0.45, 14 + tall * 0.6, dist);
   } else {
     // Director: drift around the arena on slow overlapping sines, following the ball.
     const u = 0.62 * Math.sin(rt * 0.055) + 0.22 * Math.sin(rt * 0.021 + 1.3);
-    const h = 12.5 + 2.5 * Math.sin(rt * 0.043);
+    const h = 12.5 + 2.5 * Math.sin(rt * 0.043) + tall * 0.6;
     tPos.set(Math.sin(u) * dist, h, Math.cos(u) * dist);
-    tLook.set(bx * 0.32, 3.4 + by * 0.18, bz * 0.22);
+    tLook.set(bx * 0.32, 3.4 + by * 0.18 + tall * 0.35, bz * 0.22);
   }
   const f = rig.focus;
   const on = f && rt < f.until ? 1 : 0;

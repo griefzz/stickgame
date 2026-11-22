@@ -1,7 +1,14 @@
 // Unit checks for the shared movement and ball physics (no server needed).
 // Usage: bun tools/move-check.ts
 import { BALL_R, HX, HY, PLAYER, SPEED_FIRST, SPEED_MAX, SWING, WEAPONS, nextSpeed } from "../src/shared/constants";
-import { ARENAS, inside, randomPoint } from "../src/shared/arena";
+import { ARENAS, constrain, containsBall, inside, randomPoint, shellDist, type Arena } from "../src/shared/arena";
+
+// "Inside" for a player: feet sphere inside the shell, or inside the floor plan (and off the blocks).
+const playerIn = (a: Arena, p: { x: number; y: number; z: number }, tol: number) =>
+  a.shell ? shellDist(a.shell, p.x, p.y + PLAYER.wallMargin, p.z) + PLAYER.wallMargin <= tol && inside(a, p.x, p.z, PLAYER.wallMargin - tol, p.y + PLAYER.wallMargin)
+    : inside(a, p.x, p.z, PLAYER.wallMargin - tol);
+const ballIn = (a: Arena, k: { x: number; y: number; z: number }, tol: number) =>
+  a.shell ? shellDist(a.shell, k.x, k.y, k.z) + BALL_R <= tol : inside(a, k.x, k.z, BALL_R - tol) && k.y >= BALL_R - tol && k.y <= a.top - BALL_R + tol;
 import { advanceBall, newKin } from "../src/shared/ball";
 import { B_DASH, B_JUMP, B_JUMP_P, B_SWING, newPState, stepPlayer, type PState } from "../src/shared/player";
 import { CURVE_TURN, shotDir } from "../src/shared/shot";
@@ -112,13 +119,13 @@ const land = (p: PState) => { for (let i = 0; i < 300 && !p.g; i++) step(p, 0); 
     let escaped = 0, bounces = 0;
     for (let i = 0; i < 6000; i++) {
       advanceBall(k, 1 / 600, () => bounces++);
-      if (!inside(a, k.x, k.z, BALL_R - 1e-6) || k.y < BALL_R - 1e-6 || k.y > HY - BALL_R + 1e-6) escaped++;
+      if (!containsBall(a, k.x, k.y, k.z, BALL_R)) escaped++;
     }
     const sp = Math.hypot(k.vx, k.vy, k.vz);
     check(`${a.key}: fast ball stays inside for 10 s`, escaped === 0 && Math.abs(sp - Math.hypot(173, 41, 97)) < 1e-6, `${bounces} bounces`);
     const p = newPState(0, 0, 0, ai);
     for (let i = 0; i < 400; i++) step(p, 0, Math.cos(i / 40), Math.sin(i / 40));
-    check(`${a.key}: player can't leave`, inside(a, p.x, p.z, PLAYER.wallMargin - 1e-6), `(${p.x.toFixed(1)}, ${p.z.toFixed(1)})`);
+    check(`${a.key}: player can't leave`, playerIn(a, p, 1e-6), `(${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)})`);
   }
   // Octagon diagonal: a ball flying straight at the 45 degree wall comes straight back.
   const oi = ARENAS.findIndex((x) => x.key === "octagon");
@@ -138,6 +145,31 @@ const land = (p: PState) => { for (let i = 0; i < 300 && !p.g; i++) step(p, 0); 
   step(pj, B_JUMP | B_JUMP_P, 1, 1);
   for (let i = 0; i < 8; i++) step(pj, B_JUMP, 1, 1);
   step(pj, B_JUMP | B_JUMP_P, 1, 1);
+  // Slide: running at the long wall carries you up the curve; the sphere does the same.
+  for (const key of ["slide", "sphere"]) {
+    const si = ARENAS.findIndex((x) => x.key === key);
+    const ps = newPState(0, 0, 0, si);
+    let top = 0;
+    for (let i = 0; i < 120; i++) { step(ps, 0, 0, 1); top = Math.max(top, ps.y); }
+    check(`${key}: running into the curved edge rides up it`, top > 1.5 && playerIn(ARENAS[si], ps, 1e-6), `peak ${top.toFixed(2)} m`);
+  }
+  // Sphere: a dropped lob settles on the floor and stays inside.
+  {
+    const si = ARENAS.findIndex((x) => x.key === "sphere");
+    const k = newKin(si); k.lob = true; k.y = 8; k.vx = 9; k.vz = 4;
+    for (let i = 0; i < 6000; i++) advanceBall(k, 1 / 600);
+    check("sphere: a lob comes to rest on the floor", Math.abs(k.y - BALL_R) < 1e-3 && Math.hypot(k.vx, k.vz) < 0.5 && ballIn(ARENAS[si], k, 1e-6), `y=${k.y.toFixed(3)} v=${Math.hypot(k.vx, k.vz).toFixed(2)}`);
+  }
+  // Maze: the inner walls stop the ball dead-on and stop players.
+  {
+    const mi = ARENAS.findIndex((x) => x.key === "maze");
+    const k = newKin(mi); k.x = 6; k.y = 3; k.vz = -40; // straight at the inner wall at z = -6.5
+    for (let i = 0; i < 120; i++) advanceBall(k, 1 / 600);
+    check("maze: inner walls bounce the ball", k.vz > 0 && k.z > -6.5, `z=${k.z.toFixed(2)} vz=${k.vz.toFixed(1)}`);
+    const pm = newPState(6, 0, 0, mi);
+    for (let i = 0; i < 120; i++) step(pm, 0, 0, -1);
+    check("maze: players can't walk through inner walls", pm.z > -6.5 && pm.z < -5.8, `z=${pm.z.toFixed(2)}`);
+  }
   check("circle: wall jump kicks back toward the centre", pj.wj === 1 && pj.vx < -4 && pj.vz < -4, `v=(${pj.vx.toFixed(1)}, ${pj.vz.toFixed(1)})`);
 }
 
@@ -164,6 +196,24 @@ const land = (p: PState) => { for (let i = 0; i < 300 && !p.g; i++) step(p, 0); 
   check("charge aim: stops at the edge of the 90 degree window", Math.abs(Math.abs(p.f) - SWING.aimCone) < 1e-9, `${deg(p.f)} deg after 2 s`);
 }
 
+// No squeeze points: from every legal spot on a fine grid, a dash-length step in any
+// direction settles back inside (a gap narrower than a player would leave them wedged).
+{
+  for (const a of ARENAS) {
+    if (a.shell) continue;
+    let bad = 0, where = "";
+    for (let x = -a.hx + 0.13; x <= a.hx; x += 0.25) for (let z = -a.hz + 0.13; z <= a.hz; z += 0.25) {
+      if (!inside(a, x, z, PLAYER.wallMargin)) continue;
+      for (let k = 0; k < 8; k++) {
+        const p = { x: x + Math.sin(k * Math.PI / 4) * 0.5, z: z + Math.cos(k * Math.PI / 4) * 0.5 };
+        constrain(a, p, PLAYER.wallMargin);
+        if (!inside(a, p.x, p.z, PLAYER.wallMargin - 0.01)) { bad++; where ||= `(${x.toFixed(1)}, ${z.toFixed(1)})`; }
+      }
+    }
+    check(`${a.key}: no squeeze points`, bad === 0, bad ? `${bad} spots, e.g. ${where}` : "");
+  }
+}
+
 // Fuzz: random balls (up to top speed) and random players never end up outside any arena.
 {
   let seed = 12345;
@@ -180,7 +230,7 @@ const land = (p: PState) => { for (let i = 0; i < 300 && !p.g; i++) step(p, 0); 
       for (let i = 0; i < 60; i++) {
         const sub = Math.max(1, Math.ceil((sp / 60) / 0.4));
         for (let j = 0; j < sub; j++) advanceBall(k, 1 / 60 / sub);
-        if (!inside(a, k.x, k.z, BALL_R - 1e-3)) { ballOut++; break; }
+        if (!ballIn(a, k, 1e-3)) { ballOut++; break; }
       }
     }
     for (let n = 0; n < 40; n++) {
@@ -191,7 +241,7 @@ const land = (p: PState) => { for (let i = 0; i < 300 && !p.g; i++) step(p, 0); 
         if (i % 20 === 0) { const t = rnd() * Math.PI * 2; mx = Math.sin(t); mz = Math.cos(t); }
         const b = (rnd() < 0.05 ? B_JUMP_P | B_JUMP : 0) | (rnd() < 0.04 ? B_DASH : 0);
         step(p, b, mx, mz);
-        if (!inside(a, p.x, p.z, PLAYER.wallMargin - 0.01)) { playerOut++; break; }
+        if (!playerIn(a, p, 0.01)) { playerOut++; break; }
       }
     }
     check(`${a.key}: fuzz, 200 random balls + 40 random players stay inside`, ballOut === 0 && playerOut === 0, `balls out ${ballOut}, players out ${playerOut}`);
