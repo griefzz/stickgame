@@ -25,10 +25,10 @@ Enter a name and pick **Find a match**, **Practice vs bots**, or **Play with fri
 | Director camera (while spectating) | `C` | `Y` |
 | Full screen | `Alt`+`Enter`, or the button in the corner | Pause menu → Full screen |
 
-- **Speed** climbs with every hit, up to 1000 on the speedometer. The freeze before each shot grows with it, from 0.05 s to about 1 s.
-- **Perfect hits:** a swing that starts within 0.05 s of the ball arriving adds 10% speed and cuts the freeze by a third.
+- **Speed** climbs with every hit, quickly at first and then more slowly: about 15 hits to reach 330 and about 30 to reach the 1000 cap (fewer with perfect hits and charges). The freeze before each shot grows with it, from 0.05 s to about 1 s.
+- **Perfect hits:** a swing that starts within 0.05 s of the ball arriving makes that hit's speed gain 50% bigger and cuts the freeze by a third.
 - **Curve:** the sideways input when the ball fires bends it like a curveball, until its first bounce or about 70° of turn. Curve shots are aimed by hand (no aim assist), and the dotted aim line shows the bend.
-- **Charge:** keep holding swing after you connect. The ball stays on your bat past the normal freeze and fires up to 40% faster, but everyone gets that time to read your aim.
+- **Charge:** keep holding swing after you connect. The ball stays on your bat past the normal freeze and adds up to double that hit's speed gain, but everyone gets that time to read your aim.
 - **Aiming during the freeze:** you can only aim within 45° either side of where you faced when you connected, and the aim turns at 180° a second. The aim line sweeps visibly instead of snapping.
 - **Weapons** are picked on the title screen; your colour comes from your seat:
   - **Breaker hammer (Power):** hits 12% harder, slower to recover from a miss.

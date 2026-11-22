@@ -1,6 +1,6 @@
 // Unit checks for the shared movement and ball physics (no server needed).
 // Usage: bun tools/move-check.ts
-import { BALL_R, HX, HY, PLAYER, SWING, WEAPONS } from "../src/shared/constants";
+import { BALL_R, HX, HY, PLAYER, SPEED_FIRST, SPEED_MAX, SWING, WEAPONS, nextSpeed } from "../src/shared/constants";
 import { ARENAS, inside, randomPoint } from "../src/shared/arena";
 import { advanceBall, newKin } from "../src/shared/ball";
 import { B_DASH, B_JUMP, B_JUMP_P, B_SWING, newPState, stepPlayer, type PState } from "../src/shared/player";
@@ -196,6 +196,13 @@ const land = (p: PState) => { for (let i = 0; i < 300 && !p.g; i++) step(p, 0); 
     }
     check(`${a.key}: fuzz, 200 random balls + 40 random players stay inside`, ballOut === 0 && playerOut === 0, `balls out ${ballOut}, players out ${playerOut}`);
   }
+}
+
+// Speed ramp: about 15 plain hits to reach 330 on the speedometer, about 30 to the 1000 cap.
+{
+  let s = SPEED_FIRST, n = 1, to330 = 0;
+  while (s < SPEED_MAX && n < 100) { s = nextSpeed(s); n++; if (!to330 && s * 2 >= 330) to330 = n; }
+  check("speed ramp: ~15 hits to 330, ~30 to 1000", to330 >= 13 && to330 <= 17 && n >= 26 && n <= 34, `${to330} hits to 330, ${n} to 1000`);
 }
 
 process.exit(fails ? 1 : 0);

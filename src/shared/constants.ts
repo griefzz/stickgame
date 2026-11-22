@@ -21,7 +21,10 @@ export const SPEED_NEUTRAL = 15;   // drifting serve ball
 export const SPEED_FIRST = 18;     // first smash off a neutral ball
 export const SPEED_MAX = 500;      // shows as 1000 on the speedometer
 export const OVERCLOCK_SPEED = 165; // past 330 on the speedometer the HUD reads "OVERCLOCKED"
-export const nextSpeed = (s: number) => Math.min(SPEED_MAX, s * 1.17 + 1.5);
+// Each smash adds a gain that tapers as the ball gets faster: +15% of the speed early on,
+// easing to +3% near the cap (plus a flat 2), so the top end takes a long rally to reach.
+export const speedGain = (s: number) => 2 + s * (0.15 - 0.12 * Math.min(1, s / SPEED_MAX));
+export const nextSpeed = (s: number) => Math.min(SPEED_MAX, s + speedGain(s));
 // Freeze grows steadily with speed: 0.05 s at the bottom, ~0.35 s at 330, ~0.95 s at 1000.
 // The faster the ball, the more time everyone gets to read the telegraph and move.
 export const hitstopFor = (s: number) => 0.05 + 0.9 * (s / SPEED_MAX);
@@ -109,18 +112,18 @@ export const SPAWNS = [
 export const NAME_MAX = 14;
 
 // Perfect hit: the swing started at most `window` seconds before the ball met the bat.
-// Rewards a late, risky swing with extra speed and a shorter freeze for opponents to react.
+// Rewards a late, risky swing with a bigger speed gain and a shorter freeze for opponents.
 export const PERFECT = {
   window: 0.05,
-  speedMul: 1.1,
+  gainMul: 1.5,          // this hit's speed gain is 50% bigger
   freezeMul: 0.65,
 };
 
 // Charge: keep holding swing after you connect and the ball stays on your bat past the
-// normal freeze, building up to +40% speed. Everyone else gets that time to react.
+// normal freeze, building up to double this hit's speed gain. Everyone else gets that time to react.
 export const CHARGE = {
   maxHold: 0.9,          // seconds of extra hold for a full charge (weapons can change this)
-  speedMul: 0.4,         // full charge adds 40% speed
+  gainMul: 1,            // a full charge adds another 100% of this hit's speed gain
   labelAt: 0.15,         // charge needed for the "CHARGED" callout
 };
 

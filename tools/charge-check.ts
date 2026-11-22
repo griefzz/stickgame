@@ -19,7 +19,7 @@ ws.onmessage = (e) => {
   if (m.t === "go") { slot = m.slot; rosterW = m.roster[slot].w; timer = setInterval(tick, 1000 / 60); }
   else if (m.t === "s") { snap = m; snapRecv = now(); }
   else if (m.t === "e" && m.k === "hit" && m.s === slot && !m.bu) { hits++; lastHitSpd = m.spd; holdUntil = now() + 0.7; }
-  else if (m.t === "e" && m.k === "rel" && m.s === slot && !m.bu && m.ch > 0) { charged++; if (m.spd > lastHitSpd * 1.05) chargedFaster++; if (charged >= 3) finish(); }
+  else if (m.t === "e" && m.k === "rel" && m.s === slot && !m.bu && m.ch > 0) { charged++; if (m.spd > lastHitSpd + 1e-3) chargedFaster++; if (charged >= 3) finish(); }
   else if (m.t === "end" || (m.t === "e" && m.k === "over")) finish();
 };
 

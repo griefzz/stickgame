@@ -1,7 +1,7 @@
 import {
   BALL_R, BALL_SPAWN, BUNT_HITSTOP, COUNTDOWN, DT, GAMEOVER_DELAY, HX, HZ, INVULN, KO_HOLD,
   LOB_FWD, LOB_UP, MAX_KO_GRACE, MAX_PLAYERS, MAX_REWIND, PLAYER, RESPAWN_DELAY, SERVE_DELAY,
-  CHARGE, PERFECT, SERVE_HOVER, SPAWNS, SPEED_FIRST, SPEED_MAX, SPEED_NEUTRAL, STOCKS, SWING, WEAPONS, hitstopFor, nextSpeed, weaponOf,
+  CHARGE, PERFECT, SERVE_HOVER, SPAWNS, SPEED_FIRST, SPEED_MAX, SPEED_NEUTRAL, STOCKS, SWING, WEAPONS, hitstopFor, speedGain, weaponOf,
 } from "../shared/constants";
 import { advanceBall, substepsFor, type BallKin } from "../shared/ball";
 import { B_ALL, B_SWING_HELD, hitCentre, hurtDist2, newPState, q3, stepPlayer, type Input, type PState } from "../shared/player";
@@ -70,6 +70,7 @@ export interface BallState {
   perfect: boolean;
   charge: number;      // 0..1 charge built during this hitstop
   chargeBase: number;  // when the normal freeze would have ended
+  gain: number;        // speed this hit added (perfect and charge boosts scale it)
   pend: { victim: number; ct: number; dx: number; dy: number; dz: number } | null;
 }
 
@@ -122,7 +123,7 @@ export class Match {
     }
     this.ball = {
       st: BS_NONE, k: { x: BALL_SPAWN.x, y: BALL_SPAWN.y, z: BALL_SPAWN.z, vx: 0, vy: 0, vz: 0, lob: false, cv: 0, ct: 0, ar: this.arena },
-      owner: -1, hitter: -1, speed: SPEED_NEUTRAL, hits: 0, epoch: 0, t1: 0, bunt: false, perfect: false, charge: 0, chargeBase: 0, pend: null,
+      owner: -1, hitter: -1, speed: SPEED_NEUTRAL, hits: 0, epoch: 0, t1: 0, bunt: false, perfect: false, charge: 0, chargeBase: 0, gain: 0, pend: null,
     };
     const roster: (RosterEntry | null)[] = this.slots.map((s) => (s ? { n: s.name, b: s.bot ? 1 : 0, w: s.weapon } : null));
     for (const s of this.slots) {
@@ -256,8 +257,13 @@ export class Match {
     const perfect = !bunt && !!s.swing && contactT - s.swing.tP <= wpn.perfect;
     b.k.x = x; b.k.y = y; b.k.z = z; b.k.vx = b.k.vy = b.k.vz = 0; b.k.cv = 0; b.k.ct = 0;
     if (!bunt) {
-      b.speed = b.owner < 0 ? Math.max(SPEED_FIRST, b.speed) : Math.min(SPEED_MAX, b.speed + (nextSpeed(b.speed) - b.speed) * wpn.speedMul);
-      if (perfect) b.speed = Math.min(SPEED_MAX, b.speed * PERFECT.speedMul);
+      if (b.owner < 0) { b.gain = Math.max(0, SPEED_FIRST - b.speed); b.speed = Math.max(SPEED_FIRST, b.speed); }
+      else {
+        let g = speedGain(b.speed) * wpn.speedMul;
+        if (perfect) g *= PERFECT.gainMul;
+        b.gain = g;
+        b.speed = Math.min(SPEED_MAX, b.speed + g);
+      }
     }
     const hs = bunt ? BUNT_HITSTOP : hitstopFor(b.speed) * (perfect ? PERFECT.freezeMul : 1);
     b.owner = s.idx; b.hitter = s.idx; b.hits++; b.epoch++;
@@ -289,7 +295,7 @@ export class Match {
       label = "BUNT";
     } else {
       const targets = this.slots.map((o) => (o && o !== s && o.alive ? o.p : null));
-      if (b.charge > 0) b.speed = Math.min(SPEED_MAX, b.speed * (1 + CHARGE.speedMul * b.charge));
+      if (b.charge > 0) b.speed = Math.min(SPEED_MAX, b.speed + b.gain * CHARGE.gainMul * b.charge);
       const d = shotDir(s.p.f, s.p.ay, s.p.ax, !s.p.g, b.k, targets, weaponOf(s.weapon).curve);
       b.k.lob = false;
       b.k.vx = d.x * b.speed; b.k.vy = d.y * b.speed; b.k.vz = d.z * b.speed;
