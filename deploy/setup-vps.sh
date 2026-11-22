@@ -56,7 +56,8 @@ if [ "$DOMAIN" = "_" ] && [ -e /etc/nginx/sites-enabled/default ]; then
   rm -f /etc/nginx/sites-enabled/default
 fi
 nginx -t
-systemctl reload nginx
+systemctl enable nginx
+systemctl reload-or-restart nginx
 
 if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
   echo "==> firewall: allowing HTTP/HTTPS"
