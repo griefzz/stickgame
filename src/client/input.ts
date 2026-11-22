@@ -5,12 +5,12 @@
 export type UiEvent = "up" | "down" | "left" | "right" | "ok" | "back" | "start" | "cam" | "mute";
 
 export interface GameInput {
-  mx: number; mz: number; ay: number;
-  jumpHeld: boolean; jumpPressed: boolean; swingPressed: boolean; buntPressed: boolean;
+  mx: number; mz: number; ay: number; ax: number;
+  jumpHeld: boolean; jumpPressed: boolean; swingPressed: boolean; buntPressed: boolean; dashPressed: boolean;
 }
 
 const keys = new Set<string>();
-let latchJump = false, latchSwing = false, latchBunt = false;
+let latchJump = false, latchSwing = false, latchBunt = false, latchDash = false;
 let mouseL = false, mouseR = false;
 let uiHandler: (e: UiEvent) => void = () => {};
 let gameActive = false;
@@ -22,7 +22,7 @@ let navHold = { dir: "", next: 0 };
 export function onUi(fn: (e: UiEvent) => void) { uiHandler = fn; }
 export function setGameActive(v: boolean) {
   gameActive = v;
-  if (!v) { latchJump = latchSwing = latchBunt = false; }
+  if (!v) { latchJump = latchSwing = latchBunt = latchDash = false; }
 }
 
 const typing = () => {
@@ -30,7 +30,7 @@ const typing = () => {
   return !!a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA");
 };
 
-const GAME_KEYS = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "KeyJ", "KeyK", "KeyQ", "KeyE", "KeyL"]);
+const GAME_KEYS = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "KeyJ", "KeyK", "KeyQ", "KeyE", "KeyR", "KeyF", "KeyL", "ShiftLeft", "ShiftRight"]);
 
 window.addEventListener("keydown", (e) => {
   if (typing()) {
@@ -50,6 +50,7 @@ window.addEventListener("keydown", (e) => {
       if (e.code === "Space") latchJump = true;
       if (e.code === "KeyJ" || e.code === "KeyL") latchSwing = true;
       if (e.code === "KeyK") latchBunt = true;
+      if (e.code === "ShiftLeft" || e.code === "ShiftRight") latchDash = true;
     }
     if (e.code === "Escape") uiHandler("start");
     if (e.code === "KeyC") uiHandler("cam");
@@ -86,7 +87,7 @@ function deadzone(x: number, y: number, dz = 0.18): [number, number] {
   return [x * k, y * k];
 }
 
-let padMx = 0, padMz = 0, padAy = 0, padJumpHeld = false;
+let padMx = 0, padMz = 0, padAy = 0, padAx = 0, padJumpHeld = false;
 
 function activePad(): Gamepad | null {
   const pads = navigator.getGamepads ? navigator.getGamepads() : [];
@@ -99,7 +100,7 @@ export function gamepadName(): string | null { return padName; }
 
 export function pollPads(rt: number) {
   const gp = activePad();
-  padMx = padMz = padAy = 0;
+  padMx = padMz = padAy = padAx = 0;
   padJumpHeld = false;
   if (!gp) { padName = null; return; }
   padName = gp.id.replace(/\(.*?\)/g, "").trim() || "Gamepad";
@@ -107,17 +108,19 @@ export function pollPads(rt: number) {
   const pressed = (i: number) => b(i) && !padPrev[i];
   let [lx, ly] = deadzone(gp.axes[0] ?? 0, gp.axes[1] ?? 0);
   if (b(14)) lx = -1; if (b(15)) lx = 1; if (b(12)) ly = -1; if (b(13)) ly = 1;
-  const [, ry] = deadzone(gp.axes[2] ?? 0, gp.axes[3] ?? 0, 0.3);
+  const [rx, ry] = deadzone(gp.axes[2] ?? 0, gp.axes[3] ?? 0, 0.3);
   let any = Math.abs(lx) + Math.abs(ly) + Math.abs(ry) > 0;
   for (let i = 0; i < gp.buttons.length; i++) if (b(i)) any = true;
   if (any) lastDevice = "pad";
 
   padMx = lx; padMz = ly;
-  padAy = -ry;
-  padJumpHeld = b(0) || b(4);
+  padAy = -ry;   // right stick up = aim high
+  padAx = rx;    // right stick sideways = curve
+  padJumpHeld = b(0);
 
   if (gameActive) {
-    if (pressed(0) || pressed(4)) latchJump = true;
+    if (pressed(0)) latchJump = true;
+    if (pressed(4)) latchDash = true;
     if (pressed(2) || pressed(5) || pressed(7)) latchSwing = true;
     if (pressed(1) || pressed(6)) latchBunt = true;
   } else {
@@ -143,14 +146,16 @@ export function rumble(strong: number, weak: number, ms: number) {
 
 /** Sample for one fixed tick; consumes press latches. Movement is world-space (camera faces -z). */
 export function sampleInput(): GameInput {
-  let kx = 0, kz = 0, kay = 0;
+  let kx = 0, kz = 0, kay = 0, kax = 0;
   if (!typing()) {
     if (keys.has("KeyA") || keys.has("ArrowLeft")) kx -= 1;
     if (keys.has("KeyD") || keys.has("ArrowRight")) kx += 1;
     if (keys.has("KeyW") || keys.has("ArrowUp")) kz -= 1;
     if (keys.has("KeyS") || keys.has("ArrowDown")) kz += 1;
-    if (keys.has("KeyE")) kay += 1;
-    if (keys.has("KeyQ")) kay -= 1;
+    if (keys.has("KeyR")) kay += 1;   // aim high
+    if (keys.has("KeyF")) kay -= 1;   // aim low
+    if (keys.has("KeyQ")) kax -= 1;   // curve left
+    if (keys.has("KeyE")) kax += 1;   // curve right
   }
   const km = Math.hypot(kx, kz);
   if (km > 1) { kx /= km; kz /= km; }
@@ -158,14 +163,16 @@ export function sampleInput(): GameInput {
   const m = Math.hypot(mx, mz);
   if (m > 1) { mx /= m; mz /= m; }
   const ay = Math.max(-1, Math.min(1, kay + padAy));
+  const ax = Math.max(-1, Math.min(1, kax + padAx));
   const r: GameInput = {
-    mx, mz, ay,
+    mx, mz, ay, ax,
     jumpHeld: keys.has("Space") || padJumpHeld,
     jumpPressed: latchJump,
     swingPressed: latchSwing,
     buntPressed: latchBunt,
+    dashPressed: latchDash,
   };
-  latchJump = latchSwing = latchBunt = false;
+  latchJump = latchSwing = latchBunt = latchDash = false;
   void mouseL; void mouseR;
   return r;
 }

@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { SLOTS, SPEED_MAX, STOCKS, displaySpeed } from "../shared/constants";
+import { OVERCLOCK_SPEED, SLOTS, STOCKS, displaySpeed, speedFeel } from "../shared/constants";
 import type { RosterEntry } from "../shared/protocol";
 import { camera, clamp, reducedMotion } from "./render/scene";
 
@@ -141,14 +141,14 @@ export function hudUpdate(dt: number, b: HudBall, players: HudPlayer[]) {
   disp += (target - disp) * (1 - Math.exp(-dt * 14));
   const n = String(Math.round(disp)).padStart(3, "0");
   if (n !== lastNum) { el.num.textContent = n; lastNum = n; }
-  const f = b.speed / SPEED_MAX;
+  const f = speedFeel(b.speed);
   el.fill.style.width = `${(f * 100).toFixed(1)}%`;
   const oc = b.owner >= 0 ? SLOTS[b.owner].color : "#ffffff";
   if (oc !== lastOwner) { document.documentElement.style.setProperty("--own", oc); lastOwner = oc; }
   el.owner.textContent = b.owner >= 0 ? names[b.owner] || SLOTS[b.owner].tag : "Neutral";
   el.freeze.textContent = (b.frozen ? b.freezeLeft : b.lastFreeze).toFixed(2);
   el.rally.textContent = String(b.hits);
-  const hot = f >= 0.68 && b.on;
+  const hot = b.speed >= OVERCLOCK_SPEED && b.on;
   el.panel.classList.toggle("hot", hot && !reducedMotion);
   el.panel.classList.toggle("charging", b.frozen && b.lastFreeze > 0.14);
   el.label.textContent = hot ? "Overclocked" : "Ball speed";

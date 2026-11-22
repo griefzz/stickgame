@@ -81,6 +81,10 @@ export const sfx = {
   },
   whoosh() { if (ok()) hiss(900, 0.7, 0.12, 0.12); },
   airJump() { if (ok()) { tone("sine", 420, 900, 0.16, 0.12); hiss(2600, 1.2, 0.06, 0.05); } },
+  wallJump() { if (ok()) { tone("triangle", 300, 700, 0.2, 0.1); hiss(1800, 1, 0.1, 0.06); } },
+  dash() { if (ok()) { hiss(1200, 0.6, 0.22, 0.16); tone("sawtooth", 220, 110, 0.06, 0.14); } },
+  perfect() { if (ok()) { tone("sine", 1760, 1760, 0.3, 0.25); tone("sine", 2637, 2637, 0.18, 0.3, 0.03); } },
+  curve() { if (ok()) tone("sine", 900, 500, 0.12, 0.25); },
   bunt() { if (ok()) { tone("sine", 300, 520, 0.35, 0.12); hiss(2000, 1.5, 0.1, 0.05); } },
   charge(dur: number, k: number) {
     if (!ok()) return;

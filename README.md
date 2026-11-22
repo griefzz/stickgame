@@ -13,11 +13,18 @@ Enter a name and pick **Find a match** or **Practice vs bots**. Keyboard, mouse 
 | Action | Keyboard + mouse | Controller |
 |---|---|---|
 | Move | `W` `A` `S` `D` | Left stick |
-| Jump / double jump | `Space`, again in the air | `A` or `LB`, again in the air |
+| Jump, double jump, wall jump | `Space`; again in the air or against a wall | `A`; same |
+| Air dash | `Shift` | `LB` |
 | Swing | `J` or left click | `X`, `RB` or `RT` |
 | Bunt | `K` or right click | `B` or `LT` |
-| Aim high / low | Hold `E` / `Q` | Right stick up / down |
+| Aim high / low | Hold `R` / `F` | Right stick up / down |
+| Curve left / right | Hold `Q` / `E` | Right stick left / right |
 | Camera, mute, menu | `C`, `M`, `Esc` | `Y`, `Back`, `Start` |
+
+- **Speed** climbs with every hit, up to 1000 on the speedometer. The freeze before each shot grows with it, from 0.05 s to about 1 s.
+- **Perfect hits:** a swing that starts within 0.05 s of the ball arriving adds 10% speed and cuts the freeze by a third.
+- **Curve:** the sideways input when the ball fires bends it like a curveball, until its first bounce or about 70° of turn. Curve shots are aimed by hand (no aim assist), and the dotted aim line shows the bend.
+- **Movement:** you get one double jump and one air dash per jump, and up to three wall jumps before landing. Each wall jump gives back the double jump and dash. Pushing into a wall while falling slows you to a slide.
 
 ## Develop
 
@@ -37,7 +44,7 @@ Open <http://localhost:8787> in two browser windows to play against yourself.
 | `bun tools/lagtest.ts <oneWayMs> [ws-url]` | Hit registration under simulated latency |
 | `bun tools/queue-bots.ts <matchSize> [ws-url]` | Matchmaking rules: bot fill and lobby size (server needs `FILL_WAIT=2`) |
 | `bun tools/abuse.ts [ws-url]` | Queue/leave spam can't fill slots or leak matches |
-| `bun tools/dj-check.ts` | Double jump unit check |
+| `bun tools/move-check.ts` | Movement and ball-physics unit checks (jumps, wall jumps, dash, curve) |
 | `bun tools/soak.ts <matches> <seconds> [ws-url]` | Load test with concurrent bot matches |
 | `bun tools/ws-check.ts [ws-url]` | Connects and waits for the server's welcome |
 | `bun tools/hold-match.ts [ws-url] [seconds]` | Keeps a practice match running (CI uses it to test that updates wait for matches) |

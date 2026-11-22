@@ -4,6 +4,12 @@ export interface BallKin {
   x: number; y: number; z: number;
   vx: number; vy: number; vz: number;
   lob: boolean; // true: gravity + lossy bounces (bunt arc); false: straight line, perfect reflection
+  cv: number;   // curve: signed curvature of the horizontal path (1/radius); 0 = straight
+  ct: number;   // turn budget left for the curve, radians; spin also dies on the first bounce
+}
+
+export function newKin(): BallKin {
+  return { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, lob: false, cv: 0, ct: 0 };
 }
 
 /** axis: 0 x, 1 y, 2 z. side: -1 low wall (normal +), +1 high wall (normal -). */
@@ -28,6 +34,7 @@ function foldLine(b: BallKin, axis: number, lo: number, hi: number, cb?: BounceF
     if (axis === 0) { b.x = np; b.vx = -b.vx; }
     else if (axis === 1) { b.y = np; b.vy = -b.vy; }
     else { b.z = np; b.vz = -b.vz; }
+    b.cv = 0; b.ct = 0; // spin dies on contact
     if (cb) {
       const v = axis === 0 ? b.vx : axis === 1 ? b.vy : b.vz;
       cb(axis, side, b.x, b.y, b.z, Math.abs(v));
@@ -77,6 +84,18 @@ export function advanceBall(b: BallKin, dt: number, cb?: BounceFn) {
     lobAxis(b, 1, BY0, BY1, 0.72, cb);
     lobAxis(b, 2, BZ0, BZ1, 0.85, cb);
     return;
+  }
+  if (b.cv !== 0) {
+    // Curve: turn the horizontal velocity by (curvature x distance travelled), so the
+    // arc has the same shape at any speed. Stops once the turn budget is spent.
+    let th = b.cv * Math.hypot(b.vx, b.vz) * dt;
+    const a = th < 0 ? -th : th;
+    if (a >= b.ct) { th = th < 0 ? -b.ct : b.ct; b.cv = 0; b.ct = 0; }
+    else b.ct -= a;
+    const c = Math.cos(th), s = Math.sin(th);
+    const vx = b.vx * c - b.vz * s;
+    b.vz = b.vx * s + b.vz * c;
+    b.vx = vx;
   }
   b.x += b.vx * dt; b.y += b.vy * dt; b.z += b.vz * dt;
   foldLine(b, 0, BX0, BX1, cb);

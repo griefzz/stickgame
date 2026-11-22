@@ -1,16 +1,16 @@
 import * as THREE from "three";
 import {
-  BALL_SPAWN, DT, KO_HOLD, MAX_PLAYERS, PLAYER, SLOTS, SPEED_MAX, SPEED_NEUTRAL, SWING, displaySpeed,
+  BALL_SPAWN, DT, HX, KO_HOLD, MAX_PLAYERS, PLAYER, SLOTS, SPEED_NEUTRAL, SWING, displaySpeed, speedFeel,
 } from "../shared/constants";
-import { advanceBall, substepsFor, type BallKin } from "../shared/ball";
+import { advanceBall, newKin, type BallKin } from "../shared/ball";
 import {
-  B_BUNT, B_JUMP, B_JUMP_P, B_SWING, copyP, hurtDist2, newPState, q3, stepPlayer, type Input, type PState,
+  B_BUNT, B_DASH, B_JUMP, B_JUMP_P, B_SWING, copyP, hurtDist2, newPState, q3, stepPlayer, type Input, type PState,
 } from "../shared/player";
 import { shotDir } from "../shared/shot";
 import {
   BS_FLIGHT, BS_GONE, BS_HITSTOP, BS_NONE, BS_PENDING, BS_SERVE, B_HITS, B_HITTER, B_LEFT, B_LOB, B_OWNER,
   B_SPEED, B_STATE, B_VX, B_VY, B_VZ, B_X, B_Y, B_Z, PF_ALIVE, PF_FROZEN, PF_GONE, PF_INVULN, PF_OUT,
-  PH_COUNTDOWN, PH_OVER, P_AIRJ, P_FLAGS, P_STOCKS, decodeP, type RosterEntry,
+  B_CT, B_CV, PH_COUNTDOWN, PH_OVER, P_AIRJ, P_AX, P_DASH, P_FLAGS, P_STOCKS, P_WALLJ, decodeP, type RosterEntry,
 } from "../shared/protocol";
 import { sfx, stopCharge } from "./audio";
 import { banner, callout, countdown, hudSetup, hudShow, hudUpdate, netInfo, type HudPlayer } from "./hud";
@@ -56,7 +56,7 @@ export class ClientMatch {
   controls = true;
 
   // ball
-  kin: BallKin = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, lob: false };
+  kin: BallKin = newKin();
   ballPos = v3(BALL_SPAWN.x, BALL_SPAWN.y, BALL_SPAWN.z);
   ballOn = false;
   lastBounceT = 0;
@@ -69,6 +69,8 @@ export class ClientMatch {
   lastCount = "";
   goUntil = 0;
   lastAj = [0, 0, 0, 0];
+  lastWj = [0, 0, 0, 0];
+  lastDash = [0, 0, 0, 0];
   disposed = false;
   private timers: number[] = [];
 
@@ -162,7 +164,7 @@ export class ClientMatch {
         break;
       }
       case "hit": {
-        const c = slotColor(e.s), k = Math.min(1, e.spd / SPEED_MAX);
+        const c = slotColor(e.s), k = speedFeel(e.spd);
         const at = { x: e.x, y: e.y, z: e.z };
         this.lastFreeze = e.hs;
         this.hitBunt = !!e.bu;
@@ -175,14 +177,22 @@ export class ClientMatch {
         }
         if (e.bu) sfx.bunt(); else sfx.thump(k);
         shake(0.08 + 0.25 * k);
+        if (e.pf) {
+          // Perfect: a white snap ring, a sparkle and a bright ping on contact.
+          ring(at, { color: WHITE, from: 0.3, to: 3.2, life: 0.3, peak: 1, boost: 3 });
+          burst(at, 40, { color: WHITE, speed: [6, 16], life: [0.15, 0.35], size: [0.05, 0.12], drag: 5 });
+          flash("#ffffff", 0.12);
+          sfx.perfect();
+          shake(0.15);
+        }
         if (e.s === this.slot) {
           this.frozenLocal = true;
-          rumble(0.3 + 0.5 * k, 0.6, 90 + 200 * k);
+          rumble(e.pf ? 1 : 0.3 + 0.5 * k, e.pf ? 1 : 0.6, e.pf ? 220 : 90 + 200 * k);
         }
         break;
       }
       case "rel": {
-        const c = slotColor(e.s), k = Math.min(1, e.spd / SPEED_MAX);
+        const c = slotColor(e.s), k = speedFeel(e.spd);
         const at = { x: e.x, y: e.y, z: e.z };
         const d = v3(e.vx, e.vy, e.vz).normalize();
         killRing(this.chargeRing);
@@ -197,8 +207,9 @@ export class ClientMatch {
           burst(at, Math.round(18 + 70 * k), { color: c, dir: d, spread: 0.55, speed: [8 + 20 * k, 16 + 45 * k], life: [0.2, 0.55], size: [0.08, 0.2], drag: 3.5, white: true });
           shake(0.22 + 0.6 * k);
           crowd.excite = Math.min(1.3, crowd.excite + 0.12 + 0.45 * k);
-          callout(at.x, at.y, at.z, e.lb, `SPD ${displaySpeed(e.spd)}`, SLOTS[e.s].color);
+          callout(at.x, at.y, at.z, e.lb, `SPD ${displaySpeed(e.spd)}${e.cv ? " · CURVE" : ""}`, SLOTS[e.s].color);
           sfx.hit(k);
+          if (e.cv) sfx.curve();
           if (k > 0.5) flash(SLOTS[e.s].color, 0.1 + 0.22 * k);
         }
         if (e.s === this.slot) {
@@ -310,7 +321,7 @@ export class ClientMatch {
         v = {
           x: a.x + (b.x - a.x) * alpha + this.err.x, y: Math.max(0, a.y + (b.y - a.y) * alpha + this.err.y), z: a.z + (b.z - a.z) * alpha + this.err.z,
           vx: b.vx, vz: b.vz, f: b.f, alive: true, frozen: this.frozenLocal, swingAge: sa, swingKind: b.sk,
-          invuln: !!(flags & PF_INVULN), threat: null, ready: false, local: true,
+          invuln: !!(flags & PF_INVULN), threat: null, ready: false, local: true, dash: b.ds > 0,
         };
       } else {
         const pb = s1?.p[i] ?? pa;
@@ -322,7 +333,7 @@ export class ClientMatch {
         v = {
           x: lerpA(0), y: lerpA(1), z: lerpA(2), vx: pb[3], vz: pb[5], f: pa[6] + df * frac,
           alive: !!(fl & PF_ALIVE), frozen: !!(fl & PF_FROZEN), swingAge: sa >= 0 ? sa * DT : -1, swingKind: pb[11],
-          invuln: !!(fl & PF_INVULN), threat: null, ready: false, local: false,
+          invuln: !!(fl & PF_INVULN), threat: null, ready: false, local: false, dash: (pb[P_DASH] ?? 0) > 0,
         };
         if (!s1 && L.st < renderT) {
           const ex = Math.min(0.1, renderT - L.st);
@@ -351,11 +362,12 @@ export class ClientMatch {
       if (state === BS_FLIGHT) {
         const k = this.kin;
         k.x = b[B_X]; k.y = b[B_Y]; k.z = b[B_Z]; k.vx = b[B_VX]; k.vy = b[B_VY]; k.vz = b[B_VZ]; k.lob = !!b[B_LOB];
+        k.cv = b[B_CV] ?? 0; k.ct = b[B_CT] ?? 0;
         const span = Math.min(0.3, Math.max(0, now - L.st));
         const n = Math.max(1, Math.min(240, Math.ceil((Math.hypot(k.vx, k.vy, k.vz) * span) / 0.3)));
         const h = span / n;
         let tc = L.st;
-        const sf = speed / SPEED_MAX, col = slotColor(owner);
+        const sf = speedFeel(speed), col = slotColor(owner);
         for (let i = 0; i < n; i++) {
           tc += h;
           advanceBall(k, h, (axis, side, x, y, z, imp) => {
@@ -398,9 +410,10 @@ export class ClientMatch {
       const isMe = hitter === this.slot;
       const f = isMe ? this.pred.f : hv.f;
       const ay = isMe ? this.pred.ay : (L!.p[hitter]![7] ?? 0);
+      const ax = isMe ? this.pred.ax : (L!.p[hitter]![P_AX] ?? 0);
       const air = isMe ? !this.pred.g : hv.y > 0.05;
       const targets = views.map((o, i) => (o && i !== hitter && o.alive ? o : null));
-      const d = shotDir(f, ay, air, this.ballPos, targets);
+      const d = shotDir(f, ay, ax, air, this.ballPos, targets);
       const total = Math.max(0.05, this.lastFreeze);
       const strength = 0.35 + 0.65 * Math.min(1, 1 - left / total);
       setTelegraph(true, this.ballPos, d, slotColor(hitter), strength, rt);
@@ -417,12 +430,37 @@ export class ClientMatch {
         if (i === this.slot) sfx.airJump();
       }
       this.lastAj[i] = aj;
+
+      // Wall jumps: a ring flat against the wall that was kicked off.
+      const local = i === this.slot && this.aliveLocal;
+      const wj = local ? this.pred.wj : (L?.p[i]?.[P_WALLJ] ?? 0);
+      if (v && v.alive && wj > this.lastWj[i]) {
+        const nx = Math.abs(v.x) > HX - 1.5 ? -Math.sign(v.x) : 0;
+        const nz = nx ? 0 : -Math.sign(v.z);
+        const at = { x: v.x - nx * 0.6, y: v.y + 1, z: v.z - nz * 0.6 };
+        ring(at, { color: chars[i].color, normal: v3(nx, 0, nz), from: 0.3, to: 2.2, life: 0.4, peak: 0.9 });
+        burst(at, 18, { color: chars[i].color, hemi: v3(nx, 0, nz), speed: [3, 8], life: [0.15, 0.4], size: [0.05, 0.12], drag: 4, white: true });
+        if (local) sfx.wallJump();
+      }
+      this.lastWj[i] = wj;
+
+      // Air dash: a burst at the start, then a streak of sparks for as long as it lasts.
+      const ds = local ? this.pred.ds : (L?.p[i]?.[P_DASH] ?? 0);
+      if (v && v.alive && ds > 0) {
+        const at = { x: v.x, y: v.y + 1.1, z: v.z };
+        if (!this.lastDash[i]) {
+          ring(at, { color: chars[i].color, from: 0.4, to: 2, life: 0.25, peak: 0.8 });
+          if (local) sfx.dash();
+        }
+        burst(at, 4, { color: chars[i].color, speed: [0.5, 2], life: [0.15, 0.3], size: [0.08, 0.16], drag: 6, jitter: 0.35, white: true });
+      }
+      this.lastDash[i] = ds > 0 ? 1 : 0;
     }
 
     for (let i = 0; i < MAX_PLAYERS; i++) chars[i].update(dt, rt, views[i]);
     updateBall(dt, rt, rt, {
       visible: this.ballOn, x: this.ballPos.x, y: this.ballPos.y, z: this.ballPos.z,
-      color: slotColor(owner), speedFrac: speed / SPEED_MAX, frozen, bigFreeze: frozen && this.lastFreeze > 0.1,
+      color: slotColor(owner), speedFrac: speedFeel(speed), frozen, bigFreeze: frozen && this.lastFreeze > 0.1,
     });
     const meV = views[this.slot];
     updateCamera(dt, rt, { x: this.ballPos.x, y: this.ballPos.y, z: this.ballPos.z, on: this.ballOn }, meV && meV.alive ? meV : null);
@@ -439,12 +477,14 @@ export class ClientMatch {
       if (gi.jumpPressed) b |= B_JUMP_P;
       if (gi.swingPressed) b |= B_SWING;
       if (gi.buntPressed) b |= B_BUNT;
+      if (gi.dashPressed) b |= B_DASH;
     }
     const inp: Input = {
       s: ++this.seq,
       mx: on ? q3(gi.mx) : 0,
       mz: on ? q3(gi.mz) : 0,
       ay: on ? q3(gi.ay) : 0,
+      ax: on ? q3(gi.ax) : 0,
       b,
       t: q3(now),
     };
@@ -455,7 +495,7 @@ export class ClientMatch {
       this.pending.push(inp);
       if (this.pending.length > 120) this.pending.shift();
     }
-    if (!this.over) this.net.sendRaw(`{"t":"i","d":[${inp.s},${inp.mx},${inp.mz},${inp.ay},${inp.b},${inp.t}]}`);
+    if (!this.over) this.net.sendRaw(`{"t":"i","d":[${inp.s},${inp.mx},${inp.mz},${inp.ay},${inp.b},${inp.t},${inp.ax}]}`);
   }
 
   bounceFx(axis: number, side: number, x: number, y: number, z: number, k: number, col: THREE.Color, lob: boolean) {
@@ -472,11 +512,14 @@ export class ClientMatch {
     const r2 = (PLAYER.radius + 0.9) ** 2;
     const step = 1 / 120;
     for (let i = 0; i < 150; i++) {
-      for (let j = 0; j < 3; j++) advanceBall(k, step / 3);
-      for (let s = 0; s < MAX_PLAYERS; s++) {
-        const v = views[s];
-        if (!v || !v.alive || s === owner) continue;
-        if (hurtDist2(v, k.x, k.y, k.z) <= r2) return s;
+      const sub = Math.max(1, Math.ceil((Math.hypot(k.vx, k.vy, k.vz) * step) / 0.4));
+      for (let j = 0; j < sub; j++) {
+        advanceBall(k, step / sub);
+        for (let s = 0; s < MAX_PLAYERS; s++) {
+          const v = views[s];
+          if (!v || !v.alive || s === owner) continue;
+          if (hurtDist2(v, k.x, k.y, k.z) <= r2) return s;
+        }
       }
       // Fast balls cover a lot of ground; cap the look-ahead by distance too.
       if (i * step * Math.hypot(k.vx, k.vy, k.vz) > 60) break;

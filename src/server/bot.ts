@@ -1,8 +1,8 @@
 // Server-side bots for practice (and optional queue filling). They read the
 // same state a player sees, predict the ball's path, and press the same inputs.
-import { BALL_R, DT, HX, HZ, PLAYER, SPEED_MAX, SWING } from "../shared/constants";
+import { BALL_R, DT, HX, HZ, PLAYER, SWING, speedFeel } from "../shared/constants";
 import { advanceBall, substepsFor, type BallKin } from "../shared/ball";
-import { B_BUNT, B_JUMP, B_JUMP_P, B_SWING, hitCentre, type Input } from "../shared/player";
+import { B_BUNT, B_DASH, B_JUMP, B_JUMP_P, B_SWING, hitCentre, type Input } from "../shared/player";
 import { shotDir } from "../shared/shot";
 import { BS_FLIGHT, BS_HITSTOP } from "../shared/protocol";
 import type { Match, Slot } from "./match";
@@ -41,6 +41,7 @@ export class Bot {
   bunt = false;
   aimAt = -1;
   aimY = 0;
+  aimX = 0;
   wander: { x: number; z: number } | null = null;
   wanderUntil = 0;
   hesitateUntil = 0;
@@ -49,14 +50,14 @@ export class Bot {
 
   think(m: Match, s: Slot): Input {
     const p = s.p, b = m.ball, t = m.t;
-    let mx = 0, mz = 0, btn = 0, ay = 0;
-    const out = (): Input => ({ s: ++this.seq, mx, mz, ay, b: btn, t });
+    let mx = 0, mz = 0, btn = 0, ay = 0, ax = 0;
+    const out = (): Input => ({ s: ++this.seq, mx, mz, ay, ax, b: btn, t });
 
     if (b.epoch !== this.epochSeen) {
       this.epochSeen = b.epoch;
-      const sp = b.speed / SPEED_MAX;
+      const sp = speedFeel(b.speed);
       this.miss = Math.random() < 0.05 + (1 - this.skill) * 1.1 * Math.pow(sp, 1.2);
-      this.lead = rnd(0.02, 0.08);
+      this.lead = rnd(0.035, 0.16); // swinging within ~0.05 s of contact lands a perfect hit (~1 in 5)
       this.bunt = b.speed > 80 && Math.random() < 0.12;
       this.aimAt = -1;
       this.hesitateUntil = t + rnd(0.05, 0.25) * (1.2 - this.skill);
@@ -69,6 +70,7 @@ export class Bot {
         this.aimAt = opps.length ? opps[Math.floor(Math.random() * opps.length)].idx : -1;
         const r = Math.random();
         this.aimY = r < 0.62 ? 0 : r < 0.82 ? rnd(0.5, 1) : rnd(-1, -0.5);
+        this.aimX = Math.random() < 0.22 ? (Math.random() < 0.5 ? -1 : 1) * rnd(0.6, 1) : 0;
       }
       const o = this.aimAt >= 0 ? m.slots[this.aimAt] : null;
       if (o) {
@@ -77,6 +79,7 @@ export class Bot {
         mx = dx / d; mz = dz / d;
       }
       ay = this.aimY;
+      ax = this.aimX;
       return out();
     }
 
@@ -131,6 +134,8 @@ export class Bot {
           if (!p.g && p.vy > 0) btn |= B_JUMP;
           // Ball still above us near the top of the first jump: spend the air jump.
           if (!p.g && p.aj < PLAYER.airJumps && p.vy < 1.5 && sy - SWING.hitUp - p.y > 1.2 && tau < 0.6) btn |= B_JUMP_P | B_JUMP;
+          // Airborne and still well short of the ball: air dash toward it.
+          if (!p.g && !p.dc && d > 3 && tau < 0.6) btn |= B_DASH;
         }
         if (tHit >= 0 && p.cd <= 0) {
           const fire = this.miss ? tHit <= 0.34 && tHit > 0.24 : tHit <= this.lead;
@@ -145,7 +150,7 @@ export class Bot {
       const h = m.slots[b.hitter];
       if (h && !b.bunt) {
         const targets = m.slots.map((o) => (o && o !== h && o.alive ? o.p : null));
-        const d = shotDir(h.p.f, h.p.ay, !h.p.g, b.k, targets);
+        const d = shotDir(h.p.f, h.p.ay, h.p.ax, !h.p.g, b.k, targets);
         const rx = p.x - b.k.x, rz = p.z - b.k.z;
         const hl = Math.hypot(d.x, d.z) || 1;
         const ux = d.x / hl, uz = d.z / hl;

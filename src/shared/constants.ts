@@ -19,10 +19,15 @@ export const BZ0 = -HZ + BALL_R, BZ1 = HZ - BALL_R;
 // Speed only climbs. Every smash multiplies it; bounces never slow it.
 export const SPEED_NEUTRAL = 15;   // drifting serve ball
 export const SPEED_FIRST = 18;     // first smash off a neutral ball
-export const SPEED_MAX = 165;
+export const SPEED_MAX = 500;      // shows as 1000 on the speedometer
+export const OVERCLOCK_SPEED = 165; // past 330 on the speedometer the HUD reads "OVERCLOCKED"
 export const nextSpeed = (s: number) => Math.min(SPEED_MAX, s * 1.17 + 1.5);
-// Freeze grows with speed: 0.05 s at the bottom, 0.8 s at the top.
-export const hitstopFor = (s: number) => 0.05 + 0.75 * Math.pow(s / SPEED_MAX, 1.6);
+// Freeze grows steadily with speed: 0.05 s at the bottom, ~0.35 s at 330, ~0.95 s at 1000.
+// The faster the ball, the more time everyone gets to read the telegraph and move.
+export const hitstopFor = (s: number) => 0.05 + 0.9 * (s / SPEED_MAX);
+// 0..1 intensity for visuals and sound. Curved so everyday speeds still hit hard and
+// the effects keep escalating all the way to the cap.
+export const speedFeel = (s: number) => Math.min(1, Math.pow(Math.max(0, s) / SPEED_MAX, 0.6));
 // Displayed number is speed x 2 (the concept reel's convention).
 export const displaySpeed = (s: number) => Math.round(s * 2);
 
@@ -49,6 +54,13 @@ export const PLAYER = {
   jumpV: 13.6,
   airJumps: 1,           // double jump: one extra jump before landing
   airJumpV: 12.4,
+  wallJumps: 3,          // wall jumps allowed before landing (each restores the air jump and dash)
+  wallJumpV: 13,
+  wallKick: 9.5,         // speed away from the wall
+  wallReach: 0.15,       // how close to a wall counts as touching it
+  wallSlide: 4.5,        // max fall speed while pushing into a wall
+  dashSpeed: 24,         // air dash: one per airtime
+  dashTicks: 10,         // ~0.17 s of flat, gravity-free flight
   lowJumpMul: 1.9,       // extra gravity while rising with jump released
   radius: 0.45,          // hurtbox capsule radius
   bodyLo: 0.25,          // hurtbox capsule from y+bodyLo to y+bodyHi
@@ -91,3 +103,11 @@ export const SPAWNS = [
 ];
 
 export const NAME_MAX = 14;
+
+// Perfect hit: the swing started at most `window` seconds before the ball met the bat.
+// Rewards a late, risky swing with extra speed and a shorter freeze for opponents to react.
+export const PERFECT = {
+  window: 0.05,
+  speedMul: 1.1,
+  freezeMul: 0.65,
+};

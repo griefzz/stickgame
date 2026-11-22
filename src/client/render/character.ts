@@ -108,6 +108,7 @@ export interface PlayerView {
   threat: THREE.Color | null;
   ready: boolean;      // ball incoming: hold a wind-up stance
   local: boolean;
+  dash: boolean;       // mid air dash: lean into it
 }
 
 export class Character {
@@ -290,7 +291,8 @@ export class Character {
     this.legs[1].rotation.x = lerp(-ph * 0.95 * ra, 0.45, air);
     this.armL.rotation.x = -ph * 0.8 * ra;
     this.armL.rotation.z = -0.15 - (air ? 0.5 : 0);
-    this.torso.rotation.x = 0.22 * ra;
+    this.torso.rotation.x = s.dash ? 0.75 : 0.22 * ra;
+    if (s.dash) { this.legs[0].rotation.x = -1.1; this.legs[1].rotation.x = 0.9; }
     this.body.position.y = Math.abs(Math.cos(this.runPhase)) * 0.07 * ra;
 
     this.baseRing.position.set(s.x, 0.025, s.z);

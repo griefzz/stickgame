@@ -2,7 +2,7 @@
 import type { PState } from "./player";
 import { q3 } from "./player";
 
-export const PROTOCOL = 2;
+export const PROTOCOL = 3;
 
 // Ball states
 export const BS_NONE = 0;
@@ -32,7 +32,7 @@ export type ClientMsg =
   | { t: "x" }
   | { t: "pr" }
   | { t: "lv" }
-  | { t: "i"; d: [number, number, number, number, number, number] }
+  | { t: "i"; d: [number, number, number, number, number, number, number] } // seq, mx, mz, ay, buttons, t, ax
   | { t: "p"; c: number };
 
 export interface RosterEntry { n: string; b: 0 | 1 }
@@ -49,7 +49,7 @@ export type ServerMsg =
   | { t: "err"; m: string };
 
 export function encodeP(p: PState, flags: number, stocks: number): number[] {
-  return [q3(p.x), q3(p.y), q3(p.z), q3(p.vx), q3(p.vy), q3(p.vz), q3(p.f), q3(p.ay), p.g, p.cd, p.sa, p.sk, flags, stocks, p.aj];
+  return [q3(p.x), q3(p.y), q3(p.z), q3(p.vx), q3(p.vy), q3(p.vz), q3(p.f), q3(p.ay), p.g, p.cd, p.sa, p.sk, flags, stocks, p.aj, q3(p.ax), p.ds, p.dc, p.wj];
 }
 
 export function decodeP(a: number[], out: PState): PState {
@@ -57,15 +57,19 @@ export function decodeP(a: number[], out: PState): PState {
   out.vx = a[3]; out.vy = a[4]; out.vz = a[5];
   out.f = a[6]; out.ay = a[7]; out.g = a[8];
   out.cd = a[9]; out.sa = a[10]; out.sk = a[11]; out.aj = a[14] ?? 0;
+  out.ax = a[15] ?? 0; out.ds = a[16] ?? 0; out.dc = a[17] ?? 0; out.wj = a[18] ?? 0;
   return out;
 }
 export const P_FLAGS = 12;
 export const P_STOCKS = 13;
 export const P_AIRJ = 14;
+export const P_AX = 15;
+export const P_DASH = 16;
+export const P_WALLJ = 18;
 
-// Ball snapshot: [state, x, y, z, vx, vy, vz, owner, speed, hits, timeLeft, lob, hitter]
+// Ball snapshot: [state, x, y, z, vx, vy, vz, owner, speed, hits, timeLeft, lob, hitter, curve, curveTurnLeft]
 export const B_STATE = 0, B_X = 1, B_Y = 2, B_Z = 3, B_VX = 4, B_VY = 5, B_VZ = 6,
-  B_OWNER = 7, B_SPEED = 8, B_HITS = 9, B_LEFT = 10, B_LOB = 11, B_HITTER = 12;
+  B_OWNER = 7, B_SPEED = 8, B_HITS = 9, B_LEFT = 10, B_LOB = 11, B_HITTER = 12, B_CV = 13, B_CT = 14;
 
 export function cleanName(raw: unknown): string {
   let s = typeof raw === "string" ? raw : "";

@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { BALL_R, HY } from "../../shared/constants";
-import { advanceBall, type BallKin } from "../../shared/ball";
+import { advanceBall, newKin, type BallKin } from "../../shared/ball";
 import { WHITE, camera, clamp, flareTexture, glowTexture, scene, v3 } from "./scene";
 
 const glowTex = glowTexture();
@@ -100,14 +100,15 @@ const dots = new THREE.Points(dGeo, dMat);
 dots.frustumCulled = false;
 scene.add(dots);
 
-const kin: BallKin = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, lob: false };
-export function setTelegraph(on: boolean, from?: { x: number; y: number; z: number }, dir?: { x: number; y: number; z: number }, color?: THREE.Color, strength = 1, rt = 0) {
+const kin: BallKin = newKin();
+export function setTelegraph(on: boolean, from?: { x: number; y: number; z: number }, dir?: { x: number; y: number; z: number; cv?: number; ct?: number }, color?: THREE.Color, strength = 1, rt = 0) {
   if (!on || !from || !dir || !color) { dGeo.setDrawRange(0, 0); return; }
   dMat.uniforms.uColor.value.copy(color);
   dMat.uniforms.uScale.value = (window.innerHeight * 0.5) / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * Math.min(window.devicePixelRatio || 1, 1.75);
   kin.x = from.x; kin.y = from.y; kin.z = from.z;
   const step = 0.5;
   kin.vx = dir.x * step; kin.vy = dir.y * step; kin.vz = dir.z * step;
+  kin.lob = false; kin.cv = dir.cv ?? 0; kin.ct = dir.ct ?? 0; // curve shots draw a bending line
   let bounces = 0;
   const flow = (rt * 6) % 1;
   // Start the dots a little ahead so they flow outward.

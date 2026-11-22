@@ -32,7 +32,7 @@ body.pad .kb-only{display:none}
 .mark span{color:var(--hot)}
 .sub{margin-top:7px;font-size:11px;font-weight:600;letter-spacing:.24em;text-transform:uppercase;color:var(--muted)}
 .brand.small .mark{font-size:28px}
-.keys{margin-top:8px;font-size:11px;font-weight:600;letter-spacing:.04em;color:var(--muted);max-width:300px;line-height:1.5;text-shadow:0 1px 3px #000}
+.keys{margin-top:8px;font-size:11px;font-weight:600;letter-spacing:.04em;color:var(--muted);max-width:360px;line-height:1.5;text-shadow:0 1px 3px #000}
 .keys b{color:var(--text);font-weight:700}
 
 .speed{position:absolute;top:12px;left:50%;transform:translateX(-50%);text-align:center;isolation:isolate}

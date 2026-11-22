@@ -19,8 +19,8 @@
 <div id="hud" hidden>
   <header class="brand small">
     <div class="mark">OVER<span>CLOCK</span></div>
-    <div class="keys kb-only"><b>J</b>/<b>Click</b> swing · <b>K</b> bunt · <b>Space</b> jump (×2 in air) · hold <b>E</b>/<b>Q</b> aim high/low · <b>Esc</b> menu</div>
-    <div class="keys pad-only"><b>X</b>/<b>RT</b> swing · <b>B</b> bunt · <b>A</b> jump (×2 in air) · <b>Right stick</b> aim high/low · <b>Start</b> menu</div>
+    <div class="keys kb-only"><b>J</b>/<b>Click</b> swing · <b>K</b> bunt · <b>Space</b> jump (again in air or on a wall) · <b>Shift</b> air dash · hold <b>R</b>/<b>F</b> aim high/low · hold <b>Q</b>/<b>E</b> curve · <b>Esc</b> menu</div>
+    <div class="keys pad-only"><b>X</b>/<b>RT</b> swing · <b>B</b> bunt · <b>A</b> jump (again in air or on a wall) · <b>LB</b> air dash · <b>Right stick</b> aim + curve · <b>Start</b> menu</div>
   </header>
 
   <section class="speed" id="speedPanel" aria-label="Ball speed">
@@ -87,8 +87,8 @@
         <ul>
           <li><b>Every hit speeds the ball up.</b> Bounces never slow it down.</li>
           <li><b>The ball takes the hitter's colour.</b> If it touches anyone else, they lose a stock. Three stocks each, last one standing wins.</li>
-          <li><b>Swing to send it back.</b> Time your swing as it reaches you. Your shot goes where you face, and snaps onto an opponent if they're close to your aim.</li>
-          <li><b>The freeze grows with speed.</b> The ball hangs on the bat before it fires. The dotted line shows the shot, and the hitter can still re-aim, so move.</li>
+          <li><b>Swing to send it back.</b> Your shot goes where you face, and snaps onto an opponent near your aim. <b>Swing late for a perfect hit:</b> extra speed and less time for them to react.</li>
+          <li><b>The freeze grows with speed.</b> The ball hangs on the bat before it fires. The dotted line shows the shot, including any curve, and the hitter can still re-aim, so move.</li>
           <li><b>Bunt to reset the tempo.</b> It pops the ball up harmlessly and keeps its speed for the next smash.</li>
         </ul>
       </div>
@@ -99,10 +99,12 @@
             <h3>Keyboard + mouse</h3>
             <dl>
               <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>Move</dd>
-              <dt><kbd>Space</kbd></dt><dd>Jump, double jump</dd>
+              <dt><kbd>Space</kbd></dt><dd>Jump; again in the air or on a wall</dd>
+              <dt><kbd>Shift</kbd></dt><dd>Air dash</dd>
               <dt><kbd>J</kbd> <kbd>Click</kbd></dt><dd>Swing</dd>
               <dt><kbd>K</kbd> <kbd>R-Click</kbd></dt><dd>Bunt</dd>
-              <dt><kbd>E</kbd> / <kbd>Q</kbd></dt><dd>Hold to aim high / low</dd>
+              <dt><kbd>R</kbd> / <kbd>F</kbd></dt><dd>Hold to aim high / low</dd>
+              <dt><kbd>Q</kbd> / <kbd>E</kbd></dt><dd>Hold to curve left / right</dd>
               <dt><kbd>C</kbd> <kbd>M</kbd> <kbd>Esc</kbd></dt><dd>Camera, mute, menu</dd>
             </dl>
           </div>
@@ -110,10 +112,11 @@
             <h3>Controller</h3>
             <dl>
               <dt><kbd>L-Stick</kbd></dt><dd>Move</dd>
-              <dt><kbd>A</kbd> <kbd>LB</kbd></dt><dd>Jump, double jump</dd>
+              <dt><kbd>A</kbd></dt><dd>Jump; again in the air or on a wall</dd>
+              <dt><kbd>LB</kbd></dt><dd>Air dash</dd>
               <dt><kbd>X</kbd> <kbd>RB</kbd> <kbd>RT</kbd></dt><dd>Swing</dd>
               <dt><kbd>B</kbd> <kbd>LT</kbd></dt><dd>Bunt</dd>
-              <dt><kbd>R-Stick</kbd></dt><dd>Up / down to aim high / low</dd>
+              <dt><kbd>R-Stick</kbd></dt><dd>Up / down aims high / low, sideways curves</dd>
               <dt><kbd>Y</kbd> <kbd>Back</kbd> <kbd>Start</kbd></dt><dd>Camera, mute, menu</dd>
             </dl>
           </div>
