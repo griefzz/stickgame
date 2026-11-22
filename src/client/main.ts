@@ -39,6 +39,7 @@ menu.setCamLabel(CAM_LABEL[camMode()]);
 menu.setSoundLabel(isMuted());
 
 net.helloName = menu.name();
+net.helloWeapon = menu.weapon;
 net.onStatus = (s) => {
   menu.setConnection(s);
   if (s === "closed") {
@@ -138,12 +139,35 @@ function cycleCam() {
   menu.setCamLabel(CAM_LABEL[next]);
 }
 
+// Full screen: browsers only allow it from a click or key press (controller buttons may not
+// count), so if it's refused we say how to do it instead.
+function isFullscreen() {
+  const d = document as Document & { webkitFullscreenElement?: Element | null };
+  return !!(document.fullscreenElement ?? d.webkitFullscreenElement);
+}
+function toggleFullscreen() {
+  const d = document as Document & { webkitExitFullscreen?: () => void };
+  const el = document.documentElement as HTMLElement & { webkitRequestFullscreen?: () => void };
+  try {
+    if (isFullscreen()) { if (document.exitFullscreen) void document.exitFullscreen().catch(() => {}); else d.webkitExitFullscreen?.(); return; }
+    const p = el.requestFullscreen ? el.requestFullscreen({ navigationUI: "hide" }) : (el.webkitRequestFullscreen?.(), Promise.resolve());
+    Promise.resolve(p).catch(() => blocked());
+  } catch { blocked(); }
+}
+function blocked() {
+  menu.setFullLabel(false, "Press F11");
+  setTimeout(() => menu.setFullLabel(isFullscreen()), 2500);
+}
+document.addEventListener("fullscreenchange", () => menu.setFullLabel(isFullscreen()));
+document.addEventListener("webkitfullscreenchange", () => menu.setFullLabel(isFullscreen()));
+
 function toggleMute() {
   setMuted(!isMuted());
   menu.setSoundLabel(isMuted());
 }
 
 menu.onName = (n) => { net.helloName = n; net.send({ t: "name", name: n }); };
+menu.onWeapon = (w) => { net.helloWeapon = w; net.send({ t: "wp", w }); };
 function joinQueue() {
   net.send({ t: "q", bots: menu.botsPref ? 1 : 0 });
   menu.show("queue");
@@ -157,6 +181,7 @@ menu.onResume = () => setPaused(false);
 menu.onLeave = () => { net.send({ t: "lv" }); endMatch(); menu.show(menu.room ? "room" : "title"); };
 menu.onCam = cycleCam;
 menu.onMute = toggleMute;
+menu.onFull = toggleFullscreen;
 menu.onAgain = () => {
   const practice = match?.practice;
   endMatch();
@@ -188,6 +213,7 @@ onUi((e) => {
   unlockAudio();
   if (e === "cam") { cycleCam(); return; }
   if (e === "mute") { toggleMute(); return; }
+  if (e === "full") { toggleFullscreen(); return; }
   if (match && !match.over && menu.screen === "none") {
     if (e === "start") setPaused(true);
     return;

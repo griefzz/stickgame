@@ -136,6 +136,9 @@ export class Character {
   beamT = -10;
   ko: { vel: THREE.Vector3; spin: THREE.Vector3; rx: number; rz: number; t: number; x: number; y: number; z: number } | null = null;
   shown = false;
+  weaponKey: string;
+  weaponGroup: THREE.Group;
+  mats: { dark: THREE.Material; body: THREE.Material; glow: THREE.Material };
   facing = 0;
   pos = v3();
 
@@ -176,7 +179,11 @@ export class Character {
     this.inner.add(this.swing);
     const ua = new THREE.Mesh(G.uarm, dark); ua.rotation.z = Math.PI / 2; ua.position.x = 0.6; this.swing.add(ua);
     const hand = new THREE.Mesh(G.hand, bodyM); hand.position.x = 0.9; this.swing.add(hand);
-    const w = weapon(def.weapon, dark, bodyM, glow, e); w.position.x = 0.9; this.swing.add(w);
+    this.mats = { dark, body: bodyM, glow };
+    this.weaponKey = def.weapon;
+    this.weaponGroup = weapon(def.weapon, dark, bodyM, glow, e);
+    this.weaponGroup.position.x = 0.9;
+    this.swing.add(this.weaponGroup);
 
     this.swoosh = new THREE.Mesh(swooshGeo, new THREE.MeshBasicMaterial({
       color: e.clone().multiplyScalar(1.8), vertexColors: true, transparent: true, opacity: 0,
@@ -225,6 +232,17 @@ export class Character {
   }
 
   /** Clear everything for a fresh match. */
+  /** Swap the weapon model (players pick a weapon; the seat only sets the colour). */
+  setWeapon(kind: string) {
+    if (kind === this.weaponKey) return;
+    this.swing.remove(this.weaponGroup);
+    this.weaponGroup.traverse((o) => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).geometry.dispose(); });
+    this.weaponGroup = weapon(kind, this.mats.dark, this.mats.body, this.mats.glow, this.color);
+    this.weaponGroup.position.x = 0.9;
+    this.swing.add(this.weaponGroup);
+    this.weaponKey = kind;
+  }
+
   reset() {
     this.ko = null;
     this.setShown(false);

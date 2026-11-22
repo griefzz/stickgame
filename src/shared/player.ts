@@ -1,4 +1,4 @@
-import { DT, HX, HZ, PLAYER, SWING } from "./constants";
+import { DT, HX, HZ, PLAYER, SWING, weaponOf } from "./constants";
 
 // Everything the client needs to predict its own player, and the server needs
 // to simulate it. Kept flat so it serialises to a short array.
@@ -16,6 +16,7 @@ export interface PState {
   ds: number;  // air dash ticks remaining (0 = not dashing)
   dc: number;  // air dash used this airtime 0/1
   wj: number;  // wall jumps used this airtime
+  wp: number;  // weapon index (fixed for the match; not sent in snapshots)
 }
 
 // Buttons bitmask carried by each input.
@@ -24,7 +25,8 @@ export const B_JUMP_P = 2;    // jump pressed this tick
 export const B_SWING = 4;     // swing pressed this tick
 export const B_BUNT = 8;      // bunt pressed this tick
 export const B_DASH = 16;     // air dash pressed this tick
-export const B_ALL = 31;
+export const B_SWING_HELD = 32; // swing button held (charges a hit during your own freeze)
+export const B_ALL = 63;
 
 export interface Input {
   s: number;   // sequence number
@@ -36,8 +38,8 @@ export interface Input {
   t: number;   // client's estimate of server time when sampled
 }
 
-export function newPState(x: number, z: number): PState {
-  return { x, y: 0, z, vx: 0, vy: 0, vz: 0, f: Math.atan2(-x, -z), ay: 0, g: 1, cd: 0, sa: -1, sk: 0, aj: 0, ax: 0, ds: 0, dc: 0, wj: 0 };
+export function newPState(x: number, z: number, wp = 0): PState {
+  return { x, y: 0, z, vx: 0, vy: 0, vz: 0, f: Math.atan2(-x, -z), ay: 0, g: 1, cd: 0, sa: -1, sk: 0, aj: 0, ax: 0, ds: 0, dc: 0, wj: 0, wp };
 }
 
 export function copyP(dst: PState, src: PState): PState {
@@ -45,7 +47,7 @@ export function copyP(dst: PState, src: PState): PState {
   dst.vx = src.vx; dst.vy = src.vy; dst.vz = src.vz;
   dst.f = src.f; dst.ay = src.ay; dst.g = src.g;
   dst.cd = src.cd; dst.sa = src.sa; dst.sk = src.sk; dst.aj = src.aj;
-  dst.ax = src.ax; dst.ds = src.ds; dst.dc = src.dc; dst.wj = src.wj;
+  dst.ax = src.ax; dst.ds = src.ds; dst.dc = src.dc; dst.wj = src.wj; dst.wp = src.wp;
   return dst;
 }
 
@@ -146,7 +148,7 @@ export function stepPlayer(p: PState, inp: Input, frozen: boolean): number {
 
   if ((inp.b & (B_SWING | B_BUNT)) && p.cd <= 0) {
     const bunt = !(inp.b & B_SWING);
-    p.cd = SWING.recoverTicks;
+    p.cd = weaponOf(p.wp).recover;
     p.sa = 0;
     p.sk = bunt ? 1 : 0;
     return bunt ? 2 : 1;

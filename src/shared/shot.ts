@@ -17,6 +17,7 @@ export function shotDir(
   airborne: boolean,
   from: { x: number; y: number; z: number },
   targets: ReadonlyArray<ShotTarget | null>,
+  curveMul = 1,          // weapon: higher bends tighter
 ): Shot {
   const fx = Math.sin(facing), fz = Math.cos(facing);
   const curving = Math.abs(curve) > 0.25;
@@ -49,6 +50,6 @@ export function shotDir(
   if (airborne) label = "AIR " + label;
   const c = Math.cos(pitch);
   // Positive curve bends to the hitter's right (clockwise seen from above).
-  const cv = curving ? Math.sign(curve) * Math.min(1, Math.abs(curve)) / CURVE_RADIUS : 0;
+  const cv = curving ? (Math.sign(curve) * Math.min(1, Math.abs(curve)) * curveMul) / CURVE_RADIUS : 0;
   return { x: hx * c, y: Math.sin(pitch), z: hz * c, label, target: best, cv, ct: curving ? CURVE_TURN : 0 };
 }

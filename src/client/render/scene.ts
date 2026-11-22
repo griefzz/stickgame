@@ -93,7 +93,8 @@ camera.position.set(0, 13, 32);
 
 export const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
-const bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.9, 0.55, 0.82);
+// strength 0.45 (half the concept reel's 0.9), radius 0.55, threshold 0.82
+const bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.45, 0.55, 0.82);
 composer.addPass(bloom);
 composer.addPass(new OutputPass());
 

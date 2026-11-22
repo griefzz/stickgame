@@ -2,7 +2,7 @@
 import type { PState } from "./player";
 import { q3 } from "./player";
 
-export const PROTOCOL = 3;
+export const PROTOCOL = 4;
 
 // Ball states
 export const BS_NONE = 0;
@@ -25,7 +25,8 @@ export const PH_PLAY = 1;
 export const PH_OVER = 2;
 
 export type ClientMsg =
-  | { t: "hi"; name: string; v: number }
+  | { t: "hi"; name: string; v: number; w?: number }
+  | { t: "wp"; w: number }             // weapon choice
   | { t: "name"; name: string }
   | { t: "q"; bots?: 0 | 1 }
   | { t: "bots"; on: 0 | 1 }
@@ -40,7 +41,7 @@ export type ClientMsg =
   | { t: "rb"; on: 0 | 1 }            // host: let bots fill empty seats
   | { t: "rs" };                      // host: start the match
 
-export interface RosterEntry { n: string; b: 0 | 1 }
+export interface RosterEntry { n: string; b: 0 | 1; w: number } // name, bot, weapon
 
 /** Private room state, sent to every member on any change. */
 export interface RoomState {
@@ -86,9 +87,9 @@ export const P_AX = 15;
 export const P_DASH = 16;
 export const P_WALLJ = 18;
 
-// Ball snapshot: [state, x, y, z, vx, vy, vz, owner, speed, hits, timeLeft, lob, hitter, curve, curveTurnLeft]
+// Ball snapshot: [state, x, y, z, vx, vy, vz, owner, speed, hits, timeLeft, lob, hitter, curve, curveTurnLeft, charge]
 export const B_STATE = 0, B_X = 1, B_Y = 2, B_Z = 3, B_VX = 4, B_VY = 5, B_VZ = 6,
-  B_OWNER = 7, B_SPEED = 8, B_HITS = 9, B_LEFT = 10, B_LOB = 11, B_HITTER = 12, B_CV = 13, B_CT = 14;
+  B_OWNER = 7, B_SPEED = 8, B_HITS = 9, B_LEFT = 10, B_LOB = 11, B_HITTER = 12, B_CV = 13, B_CT = 14, B_CHG = 15;
 
 export function cleanName(raw: unknown): string {
   let s = typeof raw === "string" ? raw : "";

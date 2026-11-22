@@ -1,16 +1,16 @@
 import * as THREE from "three";
 import {
-  BALL_SPAWN, DT, HX, KO_HOLD, MAX_PLAYERS, PLAYER, SLOTS, SPEED_NEUTRAL, SWING, displaySpeed, speedFeel,
+  BALL_SPAWN, DT, HX, KO_HOLD, MAX_PLAYERS, PLAYER, SLOTS, SPEED_NEUTRAL, SWING, displaySpeed, speedFeel, weaponOf,
 } from "../shared/constants";
 import { advanceBall, newKin, type BallKin } from "../shared/ball";
 import {
-  B_BUNT, B_DASH, B_JUMP, B_JUMP_P, B_SWING, copyP, hurtDist2, newPState, q3, stepPlayer, type Input, type PState,
+  B_BUNT, B_DASH, B_JUMP, B_JUMP_P, B_SWING, B_SWING_HELD, copyP, hurtDist2, newPState, q3, stepPlayer, type Input, type PState,
 } from "../shared/player";
 import { shotDir } from "../shared/shot";
 import {
   BS_FLIGHT, BS_GONE, BS_HITSTOP, BS_NONE, BS_PENDING, BS_SERVE, B_HITS, B_HITTER, B_LEFT, B_LOB, B_OWNER,
   B_SPEED, B_STATE, B_VX, B_VY, B_VZ, B_X, B_Y, B_Z, PF_ALIVE, PF_FROZEN, PF_GONE, PF_INVULN, PF_OUT,
-  B_CT, B_CV, PH_COUNTDOWN, PH_OVER, P_AIRJ, P_AX, P_DASH, P_FLAGS, P_STOCKS, P_WALLJ, decodeP, type RosterEntry,
+  B_CHG, B_CT, B_CV, PH_COUNTDOWN, PH_OVER, P_AIRJ, P_AX, P_DASH, P_FLAGS, P_STOCKS, P_WALLJ, decodeP, type RosterEntry,
 } from "../shared/protocol";
 import { sfx, stopCharge } from "./audio";
 import { banner, callout, countdown, hudSetup, hudShow, hudUpdate, netInfo, type HudPlayer } from "./hud";
@@ -72,6 +72,7 @@ export class ClientMatch {
   lastAj = [0, 0, 0, 0];
   lastWj = [0, 0, 0, 0];
   lastDash = [0, 0, 0, 0];
+  lastCharge = 0;
   disposed = false;
   private timers: number[] = [];
 
@@ -89,6 +90,9 @@ export class ClientMatch {
     this.roomCode = roomCode;
     this.pred = newPState(0, 0);
     this.prevPred = newPState(0, 0);
+    // Weapons are fixed for the match: prediction needs ours, the models need everyone's.
+    this.pred.wp = this.prevPred.wp = roster[slot]?.w ?? 0;
+    roster.forEach((r, i) => { if (r) chars[i].setWeapon(weaponOf(r.w).key); });
     for (const c of chars) c.reset();
     clearTrail();
     setTelegraph(false);
@@ -213,6 +217,7 @@ export class ClientMatch {
           sfx.hit(k);
           if (e.cv) sfx.curve();
           if (k > 0.5) flash(SLOTS[e.s].color, 0.1 + 0.22 * k);
+          if (e.ch >= 0.15) { shake(0.3 + 0.4 * e.ch); flash(SLOTS[e.s].color, 0.15 + 0.2 * e.ch); burst(at, Math.round(30 + 60 * e.ch), { color: c, speed: [4, 18], life: [0.2, 0.6], size: [0.1, 0.22], drag: 3, white: true }); }
         }
         if (e.s === this.slot) {
           this.frozenLocal = false;
@@ -356,10 +361,13 @@ export class ClientMatch {
     }
 
     // ---------------- ball
-    let state = BS_NONE, owner = -1, speed = SPEED_NEUTRAL, hits = 0, left = 0, hitter = -1;
+    let state = BS_NONE, owner = -1, speed = SPEED_NEUTRAL, hits = 0, left = 0, hitter = -1, charge = 0;
     if (L) {
       const b = L.b;
       state = b[B_STATE]; owner = b[B_OWNER]; speed = b[B_SPEED]; hits = b[B_HITS]; hitter = b[B_HITTER];
+      charge = state === BS_HITSTOP ? b[B_CHG] ?? 0 : 0;
+      if (charge > 0 && this.lastCharge === 0) sfx.charge(Math.max(0.15, weaponOf(this.roster[hitter]?.w).charge * (1 - charge)), 1);
+      this.lastCharge = charge;
       left = Math.max(0, b[B_LEFT] - (now - L.st));
       if (state === BS_FLIGHT) {
         const k = this.kin;
@@ -415,7 +423,7 @@ export class ClientMatch {
       const ax = isMe ? this.pred.ax : (L!.p[hitter]![P_AX] ?? 0);
       const air = isMe ? !this.pred.g : hv.y > 0.05;
       const targets = views.map((o, i) => (o && i !== hitter && o.alive ? o : null));
-      const d = shotDir(f, ay, ax, air, this.ballPos, targets);
+      const d = shotDir(f, ay, ax, air, this.ballPos, targets, weaponOf(this.roster[hitter]?.w).curve);
       const total = Math.max(0.05, this.lastFreeze);
       const strength = 0.35 + 0.65 * Math.min(1, 1 - left / total);
       setTelegraph(true, this.ballPos, d, slotColor(hitter), strength, rt);
@@ -462,11 +470,11 @@ export class ClientMatch {
     for (let i = 0; i < MAX_PLAYERS; i++) chars[i].update(dt, rt, views[i]);
     updateBall(dt, rt, rt, {
       visible: this.ballOn, x: this.ballPos.x, y: this.ballPos.y, z: this.ballPos.z,
-      color: slotColor(owner), speedFrac: speedFeel(speed), frozen, bigFreeze: frozen && this.lastFreeze > 0.1,
+      color: slotColor(owner), speedFrac: speedFeel(speed), frozen, bigFreeze: frozen && (this.lastFreeze > 0.1 || charge > 0), charge,
     });
     const meV = views[this.slot];
     updateCamera(dt, rt, { x: this.ballPos.x, y: this.ballPos.y, z: this.ballPos.z, on: this.ballOn }, meV && meV.alive ? meV : null);
-    hudUpdate(dt, { on: this.ballOn, speed, owner, frozen, hitstop: state === BS_HITSTOP, freezeLeft: left, lastFreeze: this.lastFreeze, hits, hitter, threat: this.threat }, hudP);
+    hudUpdate(dt, { on: this.ballOn, speed, owner, frozen, hitstop: state === BS_HITSTOP, charge, freezeLeft: left, lastFreeze: this.lastFreeze, hits, hitter, threat: this.threat }, hudP);
     netInfo(Math.round(this.net.rtt * 1000), this.practice ? "PRACTICE" : this.roomCode ? `ROOM ${this.roomCode}` : "");
   }
 
@@ -480,6 +488,7 @@ export class ClientMatch {
       if (gi.swingPressed) b |= B_SWING;
       if (gi.buntPressed) b |= B_BUNT;
       if (gi.dashPressed) b |= B_DASH;
+      if (gi.swingHeld) b |= B_SWING_HELD;
     }
     const inp: Input = {
       s: ++this.seq,

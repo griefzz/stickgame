@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { OVERCLOCK_SPEED, SLOTS, STOCKS, displaySpeed, speedFeel } from "../shared/constants";
+import { OVERCLOCK_SPEED, SLOTS, STOCKS, displaySpeed, speedFeel, weaponOf } from "../shared/constants";
 import type { RosterEntry } from "../shared/protocol";
 import { camera, clamp, reducedMotion } from "./render/scene";
 
@@ -14,6 +14,7 @@ const el = {
   label: $("speedLabel"),
   owner: $("owner"),
   freeze: $("freeze"),
+  freezeUnit: $("freezeUnit"),
   rally: $("rally"),
   charge: $("charge"),
   callouts: $("callouts"),
@@ -52,7 +53,7 @@ export function hudSetup(roster: (RosterEntry | null)[], me: number) {
     c.className = "card" + (i === me ? " is-me" : "");
     c.style.setProperty("--c", def.color);
     c.innerHTML = `<div class="name">${esc(r.n)}</div><div class="status">Ready</div>` +
-      `<div class="weapon">${i === me ? "<b>You</b> · " : ""}${def.tag} · ${def.label}</div>` +
+      `<div class="weapon">${i === me ? "<b>You</b> · " : ""}${def.tag} · ${weaponOf(r.w).name}</div>` +
       `<div class="stocks" aria-label="Stocks">${'<i class="pip"></i>'.repeat(STOCKS)}</div>`;
     el.roster.appendChild(c);
     cards.push({ el: c, status: c.querySelector(".status")!, pips: [...c.querySelectorAll<HTMLElement>(".pip")], last: "" });
@@ -129,6 +130,7 @@ export interface HudBall {
   owner: number;
   frozen: boolean;
   hitstop: boolean;     // frozen on a hitter's bat (not a K.O. hold)
+  charge: number;       // 0..1 while the hitter holds a charge
   freezeLeft: number;
   lastFreeze: number;
   hits: number;
@@ -146,13 +148,14 @@ export function hudUpdate(dt: number, b: HudBall, players: HudPlayer[]) {
   const oc = b.owner >= 0 ? SLOTS[b.owner].color : "#ffffff";
   if (oc !== lastOwner) { document.documentElement.style.setProperty("--own", oc); lastOwner = oc; }
   el.owner.textContent = b.owner >= 0 ? names[b.owner] || SLOTS[b.owner].tag : "Neutral";
-  el.freeze.textContent = (b.frozen ? b.freezeLeft : b.lastFreeze).toFixed(2);
+  el.freeze.textContent = b.charge > 0 ? `${Math.round(b.charge * 100)}%` : (b.frozen ? b.freezeLeft : b.lastFreeze).toFixed(2);
+  el.freezeUnit.hidden = b.charge > 0;
   el.rally.textContent = String(b.hits);
   const hot = b.speed >= OVERCLOCK_SPEED && b.on;
   el.panel.classList.toggle("hot", hot && !reducedMotion);
-  el.panel.classList.toggle("charging", b.frozen && b.lastFreeze > 0.14);
-  el.label.textContent = hot ? "Overclocked" : "Ball speed";
-  const ch = b.frozen && b.lastFreeze > 0.14 ? 0.15 + 0.5 * f : 0;
+  el.panel.classList.toggle("charging", (b.frozen && b.lastFreeze > 0.14) || b.charge > 0);
+  el.label.textContent = b.charge > 0 ? "Charging" : hot ? "Overclocked" : "Ball speed";
+  const ch = (b.frozen && b.lastFreeze > 0.14) || b.charge > 0 ? 0.15 + 0.5 * f + 0.3 * b.charge : 0;
   el.charge.style.opacity = String(reducedMotion ? ch * 0.4 : ch);
 
   players.forEach((p, i) => {
@@ -162,7 +165,7 @@ export function hudUpdate(dt: number, b: HudBall, players: HudPlayer[]) {
     if (p.gone) { st = "Left"; cls = "is-out"; }
     else if (p.out) { st = "Out"; cls = "is-out"; }
     else if (!p.alive) { st = "K.O."; cls = "is-ko"; }
-    else if (b.hitstop && b.hitter === i) { st = "Swing"; cls = "is-swing"; }
+    else if (b.hitstop && b.hitter === i) { st = b.charge > 0 ? `Charge ${Math.round(b.charge * 100)}%` : "Swing"; cls = "is-swing"; }
     else if (b.on && b.threat === i) { st = "Incoming"; cls = "is-target"; }
     else if (p.invuln) st = "Shielded";
     else if (p.airborne) st = "Airborne";

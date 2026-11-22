@@ -23,6 +23,7 @@ export class Net {
   onMsg: (m: ServerMsg) => void = () => {};
   onStatus: (s: Status) => void = () => {};
   helloName = "";
+  helloWeapon = 0;
 
   connect() {
     if (this.ws) return;
@@ -36,7 +37,7 @@ export class Net {
       this.synced = false;
       this.pingsSent = 0;
       this.setStatus("open");
-      this.send({ t: "hi", name: this.helloName, v: PROTOCOL });
+      this.send({ t: "hi", name: this.helloName, v: PROTOCOL, w: this.helloWeapon });
       this.ping();
     };
     ws.onmessage = (ev) => {

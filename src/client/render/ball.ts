@@ -135,6 +135,7 @@ export interface BallView {
   speedFrac: number;
   frozen: boolean;
   bigFreeze: boolean;
+  charge?: number;     // 0..1 while the hitter holds a charge
 }
 
 let scale = 0;
@@ -143,7 +144,8 @@ export function updateBall(dt: number, rt: number, now: number, s: BallView) {
   const vis = scale > 0.01;
   core.visible = glow.visible = shadow.visible = groundRing.visible = drop.visible = vis;
   const c = s.color, sf = s.speedFrac, fr = s.frozen;
-  const pulse = fr ? 1 + 0.3 * Math.sin(rt * 38) : 1;
+  const ch = s.charge ?? 0;
+  const pulse = fr ? (1 + 0.3 * Math.sin(rt * (38 + 30 * ch))) * (1 + 1.2 * ch) : 1;
   core.position.set(s.x, s.y, s.z);
   core.scale.setScalar(scale * (fr ? 1.12 : 1));
   (core.material as THREE.MeshBasicMaterial).color.copy(c).lerp(WHITE, 0.55).multiplyScalar(3.2);
@@ -157,7 +159,7 @@ export function updateBall(dt: number, rt: number, now: number, s: BallView) {
   flare.visible = fl;
   if (fl) {
     flare.position.copy(core.position);
-    flare.scale.setScalar((1.6 + sf * 5) * (0.85 + 0.15 * Math.sin(rt * 30)));
+    flare.scale.setScalar((1.6 + sf * 5) * (1 + 1.5 * ch) * (0.85 + 0.15 * Math.sin(rt * 30)));
     flare.material.rotation = rt * 1.6;
     flare.material.color.copy(c).multiplyScalar(1.6);
   }

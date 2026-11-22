@@ -111,3 +111,32 @@ export const PERFECT = {
   speedMul: 1.1,
   freezeMul: 0.65,
 };
+
+// Charge: keep holding swing after you connect and the ball stays on your bat past the
+// normal freeze, building up to +40% speed. Everyone else gets that time to react.
+export const CHARGE = {
+  maxHold: 0.9,          // seconds of extra hold for a full charge (weapons can change this)
+  speedMul: 0.4,         // full charge adds 40% speed
+  labelAt: 0.15,         // charge needed for the "CHARGED" callout
+};
+
+// Weapons are picked on the title screen; colour still comes from the seat.
+export interface Weapon {
+  key: "hammer" | "racket" | "blade" | "plank";
+  name: string;
+  trait: string;
+  desc: string;
+  speedMul: number;      // multiplies the speed gained from each smash
+  reach: number;         // hit zone radius multiplier
+  recover: number;       // ticks before you can swing again after a miss
+  perfect: number;       // perfect-hit window, seconds
+  curve: number;         // curve tightness multiplier
+  charge: number;        // seconds of hold for a full charge
+}
+export const WEAPONS: readonly Weapon[] = [
+  { key: "hammer", name: "Breaker hammer", trait: "Power", desc: "Hits 12% harder. Slower to recover from a miss.", speedMul: 1.12, reach: 1, recover: 31, perfect: 0.05, curve: 1, charge: 0.9 },
+  { key: "racket", name: "Arc racket", trait: "Reach", desc: "20% bigger hit zone. Hits 5% softer.", speedMul: 0.95, reach: 1.2, recover: 25, perfect: 0.05, curve: 1, charge: 0.9 },
+  { key: "blade", name: "Rail staff", trait: "Timing", desc: "Easier perfect hits. Recovers fast from a miss.", speedMul: 1, reach: 1, recover: 17, perfect: 0.075, curve: 1, charge: 0.9 },
+  { key: "plank", name: "Slab paddle", trait: "Spin", desc: "Curves bend 40% tighter. Charges twice as fast.", speedMul: 1, reach: 1, recover: 25, perfect: 0.05, curve: 1.4, charge: 0.45 },
+];
+export const weaponOf = (i: number | undefined): Weapon => WEAPONS[i ?? 0] ?? WEAPONS[0];

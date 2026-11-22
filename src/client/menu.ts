@@ -1,4 +1,4 @@
-import { NAME_MAX, SLOTS } from "../shared/constants";
+import { NAME_MAX, SLOTS, WEAPONS } from "../shared/constants";
 import type { RoomState, RosterEntry } from "../shared/protocol";
 import { sfx } from "./audio";
 import type { UiEvent } from "./input";
@@ -35,6 +35,8 @@ export class Menu {
   menuBtn = $<HTMLButtonElement>("btnMenu");
   room: RoomState | null = null;
   hadSavedName = false;
+  weapon = 0;
+  weaponBtn = $<HTMLButtonElement>("btnWeapon");
   roomStartBtn = $<HTMLButtonElement>("btnRoomStart");
   roomBotsBtn = $<HTMLButtonElement>("btnRoomBots");
   queueCount = $("queueCount");
@@ -69,6 +71,8 @@ export class Menu {
   onRoomLeave = () => {};
   onRoomStart = () => {};
   onRoomBots = (_on: boolean) => {};
+  onWeapon = (_w: number) => {};
+  onFull = () => {};
 
   constructor() {
     let saved = "";
@@ -76,6 +80,12 @@ export class Menu {
     this.hadSavedName = !!saved;
     try { this.botsPref = localStorage.getItem("oc.bots") !== "0"; } catch {}
     this.renderBots();
+    try { const w = parseInt(localStorage.getItem("oc.weapon") ?? "0", 10); if (WEAPONS[w]) this.weapon = w; } catch {}
+    this.renderWeapon();
+    this.weaponBtn.addEventListener("click", (e) => {
+      const prev = (e.target as HTMLElement).id === "weaponPrev";
+      this.cycleWeapon(prev ? -1 : 1);
+    });
     for (const b of this.botToggles) {
       b.addEventListener("click", () => {
         this.botsPref = !this.botsPref;
@@ -111,6 +121,8 @@ export class Menu {
     $("btnLeave").addEventListener("click", () => this.onLeave());
     this.camBtn.addEventListener("click", () => this.onCam());
     this.soundBtn.addEventListener("click", () => this.onMute());
+    $("btnFull").addEventListener("click", () => this.onFull());
+    $("btnFsCorner").addEventListener("click", () => this.onFull());
     this.againBtn.addEventListener("click", () => this.onAgain());
     $("btnMenu").addEventListener("click", () => this.onMenu());
     document.querySelectorAll<HTMLElement>("#menu [data-nav]").forEach((b) => {
@@ -160,6 +172,8 @@ export class Menu {
   handleUi(e: UiEvent) {
     const items = this.navItems();
     const cur = items.findIndex((x) => x.classList.contains("nav-focus"));
+    // Left/right on the weapon picker changes the weapon instead of moving focus.
+    if ((e === "left" || e === "right") && document.activeElement === this.weaponBtn) { this.cycleWeapon(e === "left" ? -1 : 1); return; }
     if (e === "up" || e === "left" || e === "down" || e === "right") {
       if (!items.length) return;
       const d = e === "up" || e === "left" ? -1 : 1;
@@ -248,6 +262,10 @@ export class Menu {
 
   setCamLabel(l: string) { this.camBtn.querySelector("b")!.textContent = l; }
   setSoundLabel(muted: boolean) { this.soundBtn.querySelector("b")!.textContent = muted ? "Off" : "On"; }
+  setFullLabel(on: boolean, note?: string) {
+    $("btnFull").querySelector("b")!.textContent = note ?? (on ? "On" : "Off");
+    $("fsCornerLabel").textContent = note ?? (on ? "Exit full screen" : "Full screen");
+  }
 
   showResults(rank: number[], winner: number, roster: (RosterEntry | null)[], me: number, practice: boolean) {
     const place = rank.indexOf(me) + 1;
@@ -318,5 +336,21 @@ export class Menu {
     }
     btn.textContent = ok ? "Copied" : "Select + copy";
     setTimeout(() => { btn.textContent = "Copy link"; }, 1800);
+  }
+
+  // ---------------------------------------------------------------- weapon picker
+
+  cycleWeapon(d: number) {
+    this.weapon = (this.weapon + d + WEAPONS.length) % WEAPONS.length;
+    try { localStorage.setItem("oc.weapon", String(this.weapon)); } catch {}
+    this.renderWeapon();
+    sfx.ui();
+    this.onWeapon(this.weapon);
+  }
+
+  renderWeapon() {
+    const w = WEAPONS[this.weapon];
+    $("weaponName").textContent = w.name;
+    $("weaponTrait").innerHTML = `<b>${esc(w.trait)}</b>${esc(w.desc)}`;
   }
 }

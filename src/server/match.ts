@@ -1,16 +1,18 @@
 import {
   BALL_R, BALL_SPAWN, BUNT_HITSTOP, COUNTDOWN, DT, GAMEOVER_DELAY, HX, HZ, INVULN, KO_HOLD,
   LOB_FWD, LOB_UP, MAX_KO_GRACE, MAX_PLAYERS, MAX_REWIND, PLAYER, RESPAWN_DELAY, SERVE_DELAY,
-  PERFECT, SERVE_HOVER, SPAWNS, SPEED_FIRST, SPEED_MAX, SPEED_NEUTRAL, STOCKS, SWING, hitstopFor, nextSpeed,
+  CHARGE, PERFECT, SERVE_HOVER, SPAWNS, SPEED_FIRST, SPEED_MAX, SPEED_NEUTRAL, STOCKS, SWING, WEAPONS, hitstopFor, nextSpeed, weaponOf,
 } from "../shared/constants";
 import { advanceBall, substepsFor, type BallKin } from "../shared/ball";
-import { B_ALL, hitCentre, hurtDist2, newPState, q3, stepPlayer, type Input, type PState } from "../shared/player";
+import { B_ALL, B_SWING_HELD, hitCentre, hurtDist2, newPState, q3, stepPlayer, type Input, type PState } from "../shared/player";
 import { shotDir } from "../shared/shot";
 import {
   BS_FLIGHT, BS_GONE, BS_HITSTOP, BS_NONE, BS_PENDING, BS_SERVE, PF_ALIVE, PF_FROZEN, PF_GONE,
   PF_INVULN, PF_OUT, PH_COUNTDOWN, PH_OVER, PH_PLAY, encodeP, type RosterEntry,
 } from "../shared/protocol";
 import { Bot } from "./bot";
+
+export type Entrant = { conn: Conn | null; name: string; bot: boolean; w: number };
 
 export interface Conn {
   id: number;
@@ -21,6 +23,7 @@ export interface Conn {
   slot: number;
   state: "menu" | "queue" | "match" | "room";
   bots: boolean;             // player allows bots to fill empty seats
+  weapon: number;            // chosen weapon (index into WEAPONS)
   room: { code: string } | null; // private room this connection belongs to
   ctl: number;               // token bucket for non-input messages
   ctlT: number;
@@ -45,6 +48,8 @@ export interface Slot {
   tokenT: number;
   lastInput: number;   // wall time of the last input from this player
   lastActive: number;  // wall time of the last input that did anything (AFK check)
+  weapon: number;      // index into WEAPONS
+  held: boolean;       // swing button held (for charging)
 }
 
 const IDLE_STEP_AFTER = 0.25;   // no input for this long: the server steps the player itself
@@ -62,6 +67,8 @@ export interface BallState {
   t1: number;        // hitstop end / serve launch / pending confirm time
   bunt: boolean;
   perfect: boolean;
+  charge: number;      // 0..1 charge built during this hitstop
+  chargeBase: number;  // when the normal freeze would have ended
   pend: { victim: number; ct: number; dx: number; dy: number; dz: number } | null;
 }
 
@@ -87,33 +94,34 @@ export class Match {
   onConnRemoved: (c: Conn) => void = () => {};
   roomCode: string | null;
 
-  constructor(entrants: { conn: Conn | null; name: string; bot: boolean }[], practice: boolean, onEnd: (m: Match) => void, roomCode: string | null = null) {
+  constructor(entrants: Entrant[], practice: boolean, onEnd: (m: Match) => void, roomCode: string | null = null) {
     this.roomCode = roomCode;
     this.practice = practice;
     this.onEnd = onEnd;
     this.cdEnd = this.t + COUNTDOWN + 0.6;
     // Random seats, so colours and spawn corners vary even in 2- and 3-player matches.
     const order = Array.from({ length: MAX_PLAYERS }, (_, i) => i).sort(() => Math.random() - 0.5);
-    const bySlot: ({ conn: Conn | null; name: string; bot: boolean } | null)[] = Array(MAX_PLAYERS).fill(null);
+    const bySlot: (Entrant | null)[] = Array(MAX_PLAYERS).fill(null);
     entrants.slice(0, MAX_PLAYERS).forEach((e, k) => { bySlot[order[k]] = e; });
     for (let i = 0; i < MAX_PLAYERS; i++) {
       const e = bySlot[i];
       if (!e) { this.slots.push(null); continue; }
       const sp = SPAWNS[i];
+      const w = Number.isInteger(e.w) && WEAPONS[e.w] ? e.w : 0;
       const s: Slot = {
         idx: i, name: e.name, conn: e.conn, bot: e.bot ? new Bot(i) : null,
-        p: newPState(sp.x, sp.z), alive: true, stocks: STOCKS, out: false, gone: false, frozen: false,
+        p: newPState(sp.x, sp.z, w), alive: true, stocks: STOCKS, out: false, gone: false, frozen: false,
         invulnUntil: 0, elim: 0, swing: null, lastSeq: 0, tokens: 20, tokenT: this.t,
-        lastInput: this.t, lastActive: this.t,
+        lastInput: this.t, lastActive: this.t, weapon: w, held: false,
       };
       this.slots.push(s);
       if (e.conn) { e.conn.match = this; e.conn.slot = i; e.conn.state = "match"; }
     }
     this.ball = {
       st: BS_NONE, k: { x: BALL_SPAWN.x, y: BALL_SPAWN.y, z: BALL_SPAWN.z, vx: 0, vy: 0, vz: 0, lob: false, cv: 0, ct: 0 },
-      owner: -1, hitter: -1, speed: SPEED_NEUTRAL, hits: 0, epoch: 0, t1: 0, bunt: false, perfect: false, pend: null,
+      owner: -1, hitter: -1, speed: SPEED_NEUTRAL, hits: 0, epoch: 0, t1: 0, bunt: false, perfect: false, charge: 0, chargeBase: 0, pend: null,
     };
-    const roster: (RosterEntry | null)[] = this.slots.map((s) => (s ? { n: s.name, b: s.bot ? 1 : 0 } : null));
+    const roster: (RosterEntry | null)[] = this.slots.map((s) => (s ? { n: s.name, b: s.bot ? 1 : 0, w: s.weapon } : null));
     for (const s of this.slots) {
       if (s?.conn) {
         s.conn.send(JSON.stringify({ t: "go", slot: s.idx, roster, st: q3(this.t), cdEnd: q3(this.cdEnd), practice: practice ? 1 : 0, rm: roomCode }));
@@ -170,6 +178,7 @@ export class Match {
 
   applyInput(s: Slot, inp: Input, wall: number) {
     s.lastSeq = inp.s;
+    s.held = !!(inp.b & B_SWING_HELD);
     if (this.phase === PH_OVER || !s.alive) return;
     const r = stepPlayer(s.p, inp, s.frozen);
     if (r) {
@@ -185,7 +194,7 @@ export class Match {
     const b = this.ball;
     if (b.st !== BS_FLIGHT && b.st !== BS_PENDING) return;
     const c = hitCentre(s.p, { x: 0, y: 0, z: 0 });
-    const reach = SWING.hitR + BALL_R;
+    const reach = SWING.hitR * weaponOf(s.weapon).reach + BALL_R;
     if (b.st === BS_PENDING && b.pend) {
       if (b.pend.victim === s.idx) {
         const ct = b.pend.ct;
@@ -240,15 +249,17 @@ export class Match {
     const b = this.ball;
     const bunt = s.swing?.kind === 2;
     // Perfect: the swing started just before the ball arrived (late, risky timing).
-    const perfect = !bunt && !!s.swing && contactT - s.swing.tP <= PERFECT.window;
+    const wpn = weaponOf(s.weapon);
+    const perfect = !bunt && !!s.swing && contactT - s.swing.tP <= wpn.perfect;
     b.k.x = x; b.k.y = y; b.k.z = z; b.k.vx = b.k.vy = b.k.vz = 0; b.k.cv = 0; b.k.ct = 0;
     if (!bunt) {
-      b.speed = b.owner < 0 ? Math.max(SPEED_FIRST, b.speed) : nextSpeed(b.speed);
+      b.speed = b.owner < 0 ? Math.max(SPEED_FIRST, b.speed) : Math.min(SPEED_MAX, b.speed + (nextSpeed(b.speed) - b.speed) * wpn.speedMul);
       if (perfect) b.speed = Math.min(SPEED_MAX, b.speed * PERFECT.speedMul);
     }
     const hs = bunt ? BUNT_HITSTOP : hitstopFor(b.speed) * (perfect ? PERFECT.freezeMul : 1);
     b.owner = s.idx; b.hitter = s.idx; b.hits++; b.epoch++;
     b.st = BS_HITSTOP; b.t1 = this.t + hs; b.bunt = bunt; b.perfect = perfect; b.pend = null;
+    b.charge = 0; b.chargeBase = b.t1;
     s.frozen = true;
     if (s.swing) s.swing.used = true;
     this.event({ k: "hit", s: s.idx, x: q3(x), y: q3(y), z: q3(z), spd: q3(b.speed), hs: q3(hs), bu: bunt ? 1 : 0, pf: perfect ? 1 : 0, n: b.hits });
@@ -274,16 +285,17 @@ export class Match {
       label = "BUNT";
     } else {
       const targets = this.slots.map((o) => (o && o !== s && o.alive ? o.p : null));
-      const d = shotDir(s.p.f, s.p.ay, s.p.ax, !s.p.g, b.k, targets);
+      if (b.charge > 0) b.speed = Math.min(SPEED_MAX, b.speed * (1 + CHARGE.speedMul * b.charge));
+      const d = shotDir(s.p.f, s.p.ay, s.p.ax, !s.p.g, b.k, targets, weaponOf(s.weapon).curve);
       b.k.lob = false;
       b.k.vx = d.x * b.speed; b.k.vy = d.y * b.speed; b.k.vz = d.z * b.speed;
       b.k.cv = d.cv; b.k.ct = d.ct;
-      label = (b.perfect ? "PERFECT " : "") + d.label;
+      label = (b.charge >= CHARGE.labelAt ? "CHARGED " : "") + (b.perfect ? "PERFECT " : "") + d.label;
     }
     this.event({
       k: "rel", s: s.idx, x: q3(b.k.x), y: q3(b.k.y), z: q3(b.k.z),
       vx: q3(b.k.vx), vy: q3(b.k.vy), vz: q3(b.k.vz), spd: q3(b.speed), lb: label, bu: b.bunt ? 1 : 0,
-      pf: b.perfect ? 1 : 0, cv: b.k.cv ? 1 : 0,
+      pf: b.perfect ? 1 : 0, cv: b.k.cv ? 1 : 0, ch: q3(b.charge),
     });
   }
 
@@ -343,7 +355,7 @@ export class Match {
       for (const o of this.slots) if (o && o !== v && o.alive) d = Math.min(d, Math.hypot(x - o.p.x, z - o.p.z));
       if (d > bestD) { bestD = d; best = { x, z }; }
     }
-    v.p = newPState(best.x, best.z);
+    v.p = newPState(best.x, best.z, v.weapon);
     v.alive = true;
     v.frozen = false;
     v.swing = null;
@@ -483,8 +495,17 @@ export class Match {
       else return;
     }
     if (b.st === BS_HITSTOP) {
-      if (t >= b.t1) this.release();
-      else return;
+      if (t < b.t1) return;
+      // Charge: while the hitter keeps holding swing past the normal freeze, the ball
+      // stays on the bat and builds power, up to the weapon's full-charge time.
+      const h = this.slots[b.hitter];
+      if (!b.bunt && h && !h.gone && h.held) {
+        const full = weaponOf(h.weapon).charge;
+        const held = t - b.chargeBase;
+        if (held < full) { b.charge = held / full; b.t1 = t + DT; return; }
+        b.charge = 1;
+      }
+      this.release();
     }
     if (b.st === BS_PENDING) {
       if (t >= b.t1) this.confirmKO();
@@ -495,7 +516,7 @@ export class Match {
     const k = b.k;
     const n = substepsFor(k, DT);
     const h = DT / n;
-    const reach2 = (SWING.hitR + BALL_R) ** 2;
+    const reachOf = (s: Slot) => (SWING.hitR * weaponOf(s.weapon).reach + BALL_R) ** 2;
     const hurt2 = (PLAYER.radius + BALL_R) ** 2;
     const c = { x: 0, y: 0, z: 0 };
     const harmful = b.owner >= 0 && !k.lob;
@@ -513,7 +534,7 @@ export class Match {
         hitCentre(s.p, c);
         const dx = k.x - c.x, dy = k.y - c.y, dz = k.z - c.z;
         const d2 = dx * dx + dy * dy + dz * dz;
-        if (d2 <= reach2 && d2 < hitD) { hitD = d2; hitBy = s; }
+        if (d2 <= reachOf(s) && d2 < hitD) { hitD = d2; hitBy = s; }
       }
       if (hitBy) { this.doHit(hitBy, k.x, k.y, k.z, ts); break; }
 
@@ -547,7 +568,7 @@ export class Match {
     });
     const left = b.st === BS_HITSTOP || b.st === BS_SERVE || b.st === BS_PENDING ? Math.max(0, b.t1 - this.t) : 0;
     const k = b.k;
-    const ba = [b.st, q3(k.x), q3(k.y), q3(k.z), q3(k.vx), q3(k.vy), q3(k.vz), b.owner, q3(b.speed), b.hits, q3(left), k.lob ? 1 : 0, b.hitter, k.cv, q3(k.ct)];
+    const ba = [b.st, q3(k.x), q3(k.y), q3(k.z), q3(k.vx), q3(k.vy), q3(k.vz), b.owner, q3(b.speed), b.hits, q3(left), k.lob ? 1 : 0, b.hitter, k.cv, q3(k.ct), q3(b.charge)];
     const body = JSON.stringify({ st: q3(this.t), ph: this.phase, p, b: ba }).slice(1);
     for (const s of this.slots) if (s?.conn) s.conn.send(`{"t":"s","a":${s.lastSeq},${body}`);
   }

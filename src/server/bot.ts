@@ -1,8 +1,8 @@
 // Server-side bots for practice (and optional queue filling). They read the
 // same state a player sees, predict the ball's path, and press the same inputs.
-import { BALL_R, DT, HX, HZ, PLAYER, SWING, speedFeel } from "../shared/constants";
+import { BALL_R, DT, HX, HZ, PLAYER, SWING, speedFeel, weaponOf } from "../shared/constants";
 import { advanceBall, substepsFor, type BallKin } from "../shared/ball";
-import { B_BUNT, B_DASH, B_JUMP, B_JUMP_P, B_SWING, hitCentre, type Input } from "../shared/player";
+import { B_BUNT, B_DASH, B_JUMP, B_JUMP_P, B_SWING, B_SWING_HELD, hitCentre, type Input } from "../shared/player";
 import { shotDir } from "../shared/shot";
 import { BS_FLIGHT, BS_HITSTOP } from "../shared/protocol";
 import type { Match, Slot } from "./match";
@@ -42,6 +42,7 @@ export class Bot {
   aimAt = -1;
   aimY = 0;
   aimX = 0;
+  chargeFor = 0;
   wander: { x: number; z: number } | null = null;
   wanderUntil = 0;
   hesitateUntil = 0;
@@ -71,6 +72,7 @@ export class Bot {
         const r = Math.random();
         this.aimY = r < 0.62 ? 0 : r < 0.82 ? rnd(0.5, 1) : rnd(-1, -0.5);
         this.aimX = Math.random() < 0.22 ? (Math.random() < 0.5 ? -1 : 1) * rnd(0.6, 1) : 0;
+        this.chargeFor = Math.random() < 0.25 ? rnd(0.15, 0.9) : 0;
       }
       const o = this.aimAt >= 0 ? m.slots[this.aimAt] : null;
       if (o) {
@@ -80,6 +82,7 @@ export class Bot {
       }
       ay = this.aimY;
       ax = this.aimX;
+      if (t < b.chargeBase + this.chargeFor) btn |= B_SWING_HELD;
       return out();
     }
 
@@ -89,7 +92,7 @@ export class Bot {
       const pr = predict(m);
       const c = { x: 0, y: 0, z: 0 };
       hitCentre(p, c);
-      const reach = SWING.hitR + BALL_R - 0.15;
+      const reach = SWING.hitR * weaponOf(s.weapon).reach + BALL_R - 0.15;
       let tHit = -1, close = false;
       for (let i = 0; i < pr.n; i++) {
         const x = pr.pts[i * 3], y = pr.pts[i * 3 + 1], z = pr.pts[i * 3 + 2];

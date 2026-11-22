@@ -2,11 +2,12 @@
 // latched until the next fixed tick consumes them, so no press is lost at any
 // frame rate. Menu navigation is emitted as UI events.
 
-export type UiEvent = "up" | "down" | "left" | "right" | "ok" | "back" | "start" | "cam" | "mute";
+export type UiEvent = "up" | "down" | "left" | "right" | "ok" | "back" | "start" | "cam" | "mute" | "full";
 
 export interface GameInput {
   mx: number; mz: number; ay: number; ax: number;
   jumpHeld: boolean; jumpPressed: boolean; swingPressed: boolean; buntPressed: boolean; dashPressed: boolean;
+  swingHeld: boolean;
 }
 
 const keys = new Set<string>();
@@ -33,6 +34,11 @@ const typing = () => {
 const GAME_KEYS = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "KeyJ", "KeyK", "KeyQ", "KeyE", "KeyR", "KeyF", "KeyL", "ShiftLeft", "ShiftRight"]);
 
 window.addEventListener("keydown", (e) => {
+  if (e.altKey && (e.code === "Enter" || e.code === "NumpadEnter")) {
+    e.preventDefault();
+    if (!e.repeat) uiHandler("full");
+    return;
+  }
   if (typing()) {
     if (e.code === "Escape") (document.activeElement as HTMLElement).blur();
     if (e.code === "Enter") uiHandler("ok");
@@ -87,7 +93,7 @@ function deadzone(x: number, y: number, dz = 0.18): [number, number] {
   return [x * k, y * k];
 }
 
-let padMx = 0, padMz = 0, padAy = 0, padAx = 0, padJumpHeld = false;
+let padMx = 0, padMz = 0, padAy = 0, padAx = 0, padJumpHeld = false, padSwingHeld = false;
 
 function activePad(): Gamepad | null {
   const pads = navigator.getGamepads ? navigator.getGamepads() : [];
@@ -102,6 +108,7 @@ export function pollPads(rt: number) {
   const gp = activePad();
   padMx = padMz = padAy = padAx = 0;
   padJumpHeld = false;
+  padSwingHeld = false;
   if (!gp) { padName = null; return; }
   padName = gp.id.replace(/\(.*?\)/g, "").trim() || "Gamepad";
   const b = (i: number) => !!gp.buttons[i]?.pressed || (gp.buttons[i]?.value ?? 0) > 0.5;
@@ -117,6 +124,7 @@ export function pollPads(rt: number) {
   padAy = -ry;   // right stick up = aim high
   padAx = rx;    // right stick sideways = curve
   padJumpHeld = b(0);
+  padSwingHeld = b(2) || b(5) || b(7);
 
   if (gameActive) {
     if (pressed(0)) latchJump = true;
@@ -171,6 +179,7 @@ export function sampleInput(): GameInput {
     swingPressed: latchSwing,
     buntPressed: latchBunt,
     dashPressed: latchDash,
+    swingHeld: keys.has("KeyJ") || keys.has("KeyL") || mouseL || padSwingHeld,
   };
   latchJump = latchSwing = latchBunt = latchDash = false;
   void mouseL; void mouseR;

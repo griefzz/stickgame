@@ -1,8 +1,8 @@
 // Unit checks for the shared movement and ball physics (no server needed).
 // Usage: bun tools/move-check.ts
-import { HX, PLAYER } from "../src/shared/constants";
+import { HX, PLAYER, WEAPONS } from "../src/shared/constants";
 import { advanceBall, newKin } from "../src/shared/ball";
-import { B_DASH, B_JUMP, B_JUMP_P, newPState, stepPlayer, type PState } from "../src/shared/player";
+import { B_DASH, B_JUMP, B_JUMP_P, B_SWING, newPState, stepPlayer, type PState } from "../src/shared/player";
 import { CURVE_TURN, shotDir } from "../src/shared/shot";
 
 let fails = 0;
@@ -93,6 +93,14 @@ const land = (p: PState) => { for (let i = 0; i < 300 && !p.g; i++) step(p, 0); 
   const k = newKin(); k.y = 5; k.vx = s.x * 20; k.vz = s.z * 20; k.cv = s.cv; k.ct = s.ct;
   for (let i = 0; i < 20; i++) advanceBall(k, 0.02);
   check("curve: right means the hitter's right", k.x > 0.05, `x=${k.x.toFixed(2)}`);
+}
+
+// Weapons: recovery after a whiff differs (hammer slow, staff fast).
+{
+  const ham = newPState(0, 0, 0), staff = newPState(0, 0, 2);
+  stepPlayer(ham, { s: 0, mx: 0, mz: 0, ay: 0, ax: 0, b: B_SWING, t: 0 }, false);
+  stepPlayer(staff, { s: 0, mx: 0, mz: 0, ay: 0, ax: 0, b: B_SWING, t: 0 }, false);
+  check("weapons: hammer recovers slower than staff", ham.cd === WEAPONS[0].recover && staff.cd === WEAPONS[2].recover && ham.cd > staff.cd, `${ham.cd} vs ${staff.cd} ticks`);
 }
 
 process.exit(fails ? 1 : 0);

@@ -17,15 +17,22 @@ Enter a name and pick **Find a match**, **Practice vs bots**, or **Play with fri
 | Move | `W` `A` `S` `D` | Left stick |
 | Jump, double jump, wall jump | `Space`; again in the air or against a wall | `A`; same |
 | Air dash | `Shift` | `LB` |
-| Swing | `J` or left click | `X`, `RB` or `RT` |
+| Swing (keep holding after a hit to charge) | `J` or left click | `X`, `RB` or `RT` |
 | Bunt | `K` or right click | `B` or `LT` |
 | Aim high / low | Hold `R` / `F` | Right stick up / down |
 | Curve left / right | Hold `Q` / `E` | Right stick left / right |
 | Camera, mute, menu | `C`, `M`, `Esc` | `Y`, `Back`, `Start` |
+| Full screen | `Alt`+`Enter`, or the button in the corner | Pause menu → Full screen |
 
 - **Speed** climbs with every hit, up to 1000 on the speedometer. The freeze before each shot grows with it, from 0.05 s to about 1 s.
 - **Perfect hits:** a swing that starts within 0.05 s of the ball arriving adds 10% speed and cuts the freeze by a third.
 - **Curve:** the sideways input when the ball fires bends it like a curveball, until its first bounce or about 70° of turn. Curve shots are aimed by hand (no aim assist), and the dotted aim line shows the bend.
+- **Charge:** keep holding swing after you connect. The ball stays on your bat past the normal freeze and fires up to 40% faster, but everyone gets that time to read your aim.
+- **Weapons** are picked on the title screen; your colour comes from your seat:
+  - **Breaker hammer (Power):** hits 12% harder, slower to recover from a miss.
+  - **Arc racket (Reach):** 20% bigger hit zone, hits 5% softer.
+  - **Rail staff (Timing):** 75 ms perfect window, quick recovery.
+  - **Slab paddle (Spin):** curves bend 40% tighter, charges twice as fast.
 - **Movement:** you get one double jump and one air dash per jump, and up to three wall jumps before landing. Each wall jump gives back the double jump and dash. Pushing into a wall while falling slows you to a slide.
 
 ## Develop
@@ -47,6 +54,7 @@ Open <http://localhost:8787> in two browser windows to play against yourself.
 | `bun tools/queue-bots.ts <matchSize> [ws-url]` | Matchmaking rules: bot fill and lobby size (server needs `FILL_WAIT=2`) |
 | `bun tools/abuse.ts [ws-url]` | Queue/leave spam can't fill slots or leak matches |
 | `bun tools/room-check.ts [ws-url]` | Private rooms: create, join, start, rematch, host handover |
+| `bun tools/charge-check.ts [ws-url]` | Weapon choice and charged shots in a practice match |
 | `bun tools/move-check.ts` | Movement and ball-physics unit checks (jumps, wall jumps, dash, curve) |
 | `bun tools/soak.ts <matches> <seconds> [ws-url]` | Load test with concurrent bot matches |
 | `bun tools/ws-check.ts [ws-url]` | Connects and waits for the server's welcome |

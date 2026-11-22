@@ -20,8 +20,8 @@
 <div id="hud" hidden>
   <header class="brand small">
     <div class="mark">OVER<span>CLOCK</span></div>
-    <div class="keys kb-only"><b>J</b>/<b>Click</b> swing · <b>K</b> bunt · <b>Space</b> jump (again in air or on a wall) · <b>Shift</b> air dash · hold <b>R</b>/<b>F</b> aim high/low · hold <b>Q</b>/<b>E</b> curve · <b>Esc</b> menu</div>
-    <div class="keys pad-only"><b>X</b>/<b>RT</b> swing · <b>B</b> bunt · <b>A</b> jump (again in air or on a wall) · <b>LB</b> air dash · <b>Right stick</b> aim + curve · <b>Start</b> menu</div>
+    <div class="keys kb-only"><b>J</b>/<b>Click</b> swing (hold to charge) · <b>K</b> bunt · <b>Space</b> jump (again in air or on a wall) · <b>Shift</b> air dash · hold <b>R</b>/<b>F</b> aim high/low · hold <b>Q</b>/<b>E</b> curve · <b>Esc</b> menu</div>
+    <div class="keys pad-only"><b>X</b>/<b>RT</b> swing (hold to charge) · <b>B</b> bunt · <b>A</b> jump (again in air or on a wall) · <b>LB</b> air dash · <b>Right stick</b> aim + curve · <b>Start</b> menu</div>
   </header>
 
   <section class="speed" id="speedPanel" aria-label="Ball speed">
@@ -30,7 +30,7 @@
     <div class="speed-bar"><i id="speedFill"></i></div>
     <div class="speed-meta">
       <span class="opt">Owner <b id="owner">Neutral</b></span>
-      <span>Freeze <b id="freeze">0.00</b><small> s</small></span>
+      <span>Freeze <b id="freeze">0.00</b><small id="freezeUnit"> s</small></span>
       <span>Rally <b id="rally">0</b></span>
     </div>
   </section>
@@ -59,6 +59,15 @@
           <button type="button" class="ghost" id="btnShuffle" data-nav title="Random name">Shuffle</button>
         </span>
       </label>
+
+      <div class="field">
+        <span class="lbl">Weapon</span>
+        <button type="button" class="weaponpick" id="btnWeapon" data-nav aria-label="Weapon">
+          <span class="arrow" id="weaponPrev" aria-hidden="true">‹</span>
+          <span class="wbody"><span class="wname" id="weaponName"></span><span class="wtrait" id="weaponTrait"></span></span>
+          <span class="arrow" id="weaponNext" aria-hidden="true">›</span>
+        </button>
+      </div>
 
       <button type="button" class="toggle bots-toggle" id="btnBots" role="switch" aria-checked="true" data-nav>
         <span class="sw" aria-hidden="true"></span>
@@ -97,6 +106,7 @@
           <li><b>The ball takes the hitter's colour.</b> If it touches anyone else, they lose a stock. Three stocks each, last one standing wins.</li>
           <li><b>Swing to send it back.</b> Your shot goes where you face, and snaps onto an opponent near your aim. <b>Swing late for a perfect hit:</b> extra speed and less time for them to react.</li>
           <li><b>The freeze grows with speed.</b> The ball hangs on the bat before it fires. The dotted line shows the shot, including any curve, and the hitter can still re-aim, so move.</li>
+          <li><b>Hold swing to charge.</b> Keep holding after you connect and the ball stays on your bat, firing up to 40% faster. Everyone gets that time to read your aim.</li>
           <li><b>Bunt to reset the tempo.</b> It pops the ball up harmlessly and keeps its speed for the next smash.</li>
         </ul>
       </div>
@@ -107,24 +117,25 @@
             <h3>Keyboard + mouse</h3>
             <dl>
               <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>Move</dd>
-              <dt><kbd>Space</kbd></dt><dd>Jump; again in the air or on a wall</dd>
+              <dt><kbd>Space</kbd></dt><dd>Jump · double · off walls</dd>
               <dt><kbd>Shift</kbd></dt><dd>Air dash</dd>
-              <dt><kbd>J</kbd> <kbd>Click</kbd></dt><dd>Swing</dd>
+              <dt><kbd>J</kbd> <kbd>Click</kbd></dt><dd>Swing · hold to charge</dd>
               <dt><kbd>K</kbd> <kbd>R-Click</kbd></dt><dd>Bunt</dd>
-              <dt><kbd>R</kbd> / <kbd>F</kbd></dt><dd>Hold to aim high / low</dd>
-              <dt><kbd>Q</kbd> / <kbd>E</kbd></dt><dd>Hold to curve left / right</dd>
+              <dt><kbd>R</kbd> / <kbd>F</kbd></dt><dd>Aim high / low</dd>
+              <dt><kbd>Q</kbd> / <kbd>E</kbd></dt><dd>Curve left / right</dd>
               <dt><kbd>C</kbd> <kbd>M</kbd> <kbd>Esc</kbd></dt><dd>Camera, mute, menu</dd>
+              <dt><kbd>Alt</kbd>+<kbd>Enter</kbd></dt><dd>Full screen</dd>
             </dl>
           </div>
           <div class="ctl-col padcol">
             <h3>Controller</h3>
             <dl>
               <dt><kbd>L-Stick</kbd></dt><dd>Move</dd>
-              <dt><kbd>A</kbd></dt><dd>Jump; again in the air or on a wall</dd>
+              <dt><kbd>A</kbd></dt><dd>Jump · double · off walls</dd>
               <dt><kbd>LB</kbd></dt><dd>Air dash</dd>
-              <dt><kbd>X</kbd> <kbd>RB</kbd> <kbd>RT</kbd></dt><dd>Swing</dd>
+              <dt><kbd>X</kbd> <kbd>RB</kbd> <kbd>RT</kbd></dt><dd>Swing · hold to charge</dd>
               <dt><kbd>B</kbd> <kbd>LT</kbd></dt><dd>Bunt</dd>
-              <dt><kbd>R-Stick</kbd></dt><dd>Up / down aims high / low, sideways curves</dd>
+              <dt><kbd>R-Stick</kbd></dt><dd>Aim high / low · curve</dd>
               <dt><kbd>Y</kbd> <kbd>Back</kbd> <kbd>Start</kbd></dt><dd>Camera, mute, menu</dd>
             </dl>
           </div>
@@ -177,6 +188,7 @@
       <button type="button" class="btn primary" id="btnResume" data-nav><span>Resume</span><span class="glyph"><i class="kb-only">Esc</i><i class="pad-only">Start</i></span></button>
       <button type="button" class="btn" id="btnCam" data-nav><span>Camera</span><b>Arena</b></button>
       <button type="button" class="btn" id="btnSound" data-nav><span>Sound</span><b>On</b></button>
+      <button type="button" class="btn" id="btnFull" data-nav><span>Full screen</span><b>Off</b></button>
       <button type="button" class="btn danger" id="btnLeave" data-nav><span>Leave match</span></button>
     </div>
   </section>
@@ -193,6 +205,7 @@
 </div>
 
 <div class="version" id="version" aria-label="Version"></div>
+<button type="button" class="fsbtn" id="btnFsCorner" title="Full screen (Alt+Enter)"><span aria-hidden="true">⛶</span> <span id="fsCornerLabel">Full screen</span></button>
 <div id="fallback" hidden>This browser couldn't start WebGL, so the arena can't render here.<br>Open the page in a recent Chrome, Edge, Firefox or Safari with hardware acceleration turned on.</div>
 <script type="module">/*__JS__*/</script>
 </body>

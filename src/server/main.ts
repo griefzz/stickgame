@@ -3,9 +3,9 @@
 import { join } from "node:path";
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import type { ServerWebSocket } from "bun";
-import { DT, MAX_PLAYERS } from "../shared/constants";
+import { DT, MAX_PLAYERS, WEAPONS } from "../shared/constants";
 import { PROTOCOL, cleanName } from "../shared/protocol";
-import { Match, type Conn } from "./match";
+import { Match, type Conn, type Entrant } from "./match";
 
 const env = (k: string, d: string) => process.env[k] ?? d;
 const PORT = +env("PORT", "8787");
@@ -40,9 +40,9 @@ function startMatch(list: Conn[], practice: boolean, opts: { bots?: number; room
   const players = [...new Set(list)].filter((c) => conns.has(c) && !c.match);
   if (!players.length) return null;
   for (const c of players) unqueue(c);
-  const entrants: { conn: Conn | null; name: string; bot: boolean }[] = players.map((c) => ({ conn: c, name: c.name, bot: false }));
+  const entrants: Entrant[] = players.map((c) => ({ conn: c, name: c.name, bot: false, w: c.weapon }));
   const nBots = practice ? MAX_PLAYERS - entrants.length : opts.bots ?? botsFor(players);
-  for (const n of randomBots(nBots, players.map((p) => p.name))) entrants.push({ conn: null, name: n, bot: true });
+  for (const n of randomBots(nBots, players.map((p) => p.name))) entrants.push({ conn: null, name: n, bot: true, w: Math.floor(Math.random() * WEAPONS.length) });
   const room = opts.room;
   const m = new Match(entrants, practice, (done) => {
     matches.delete(done);
@@ -166,9 +166,13 @@ function onMessage(c: Conn, raw: string | Buffer) {
       if (Number.isFinite(+m.r)) c.rtt = Math.max(0, Math.min(1, +m.r));
       c.send(JSON.stringify({ t: "po", c: m.c, s: Math.round(now() * 1e4) / 1e4 }));
       return;
+    case "wp":
+      if (Number.isInteger(m.w) && WEAPONS[m.w]) c.weapon = m.w;
+      return;
     case "hi":
     case "name": {
       const n = cleanName(m.name);
+      if (Number.isInteger(m.w) && WEAPONS[m.w]) c.weapon = m.w;
       c.name = n || c.name;
       if (m.t === "hi") c.send(JSON.stringify({ t: "w", id: c.id, v: PROTOCOL, size: MATCH_SIZE, bf: BOT_FILL_TO, b: clientBuild(), ver: pageVersion() }));
       else if (c.room) { const r = rooms.get(c.room.code); if (r) sendRoom(r); }
@@ -272,7 +276,7 @@ const server = Bun.serve<Data>({
       if (conns.size >= MAX_CONNS) return new Response("server full", { status: 503 });
       const conn: Conn = {
         id: nextId++, name: `PLAYER-${Math.floor(1000 + Math.random() * 9000)}`, rtt: 0.08,
-        send: () => {}, match: null, slot: -1, state: "menu", ctl: 16, ctlT: now(), bots: false, room: null,
+        send: () => {}, match: null, slot: -1, state: "menu", ctl: 16, ctlT: now(), bots: false, room: null, weapon: 0,
       };
       if (srv.upgrade(req, { data: { conn } })) return;
       return new Response("websocket upgrade failed", { status: 400 });
