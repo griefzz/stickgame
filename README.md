@@ -85,12 +85,20 @@ sudo DOMAIN=game.example.com \
 
 Paste the `.pub` file's contents if it isn't on the VPS. Leave `DOMAIN` out to serve on the bare IP.
 
-**3. Add the repository secrets** from your machine:
+**3. Add the secrets** from your machine. They live on the `production` environment, which only accepts deployments from `main`. That way, workflows running on any other branch can never read the VPS key.
 
 ```sh
-gh secret set VPS_HOST --repo griefzz/stickgame --body "your.vps.ip.or.hostname"
-gh secret set VPS_SSH_KEY --repo griefzz/stickgame < overclock_deploy
-ssh-keyscan -H your.vps.ip.or.hostname | gh secret set VPS_KNOWN_HOSTS --repo griefzz/stickgame
+gh secret set VPS_HOST --env production --repo griefzz/stickgame --body "your.vps.ip.or.hostname"
+gh secret set VPS_SSH_KEY --env production --repo griefzz/stickgame < overclock_deploy
+ssh-keyscan -H your.vps.ip.or.hostname | gh secret set VPS_KNOWN_HOSTS --env production --repo griefzz/stickgame
+```
+
+To set up the branch lock on a fresh copy of the repo:
+
+```sh
+gh api -X PUT repos/griefzz/stickgame/environments/production \
+  -F 'deployment_branch_policy[protected_branches]=false' -F 'deployment_branch_policy[custom_branch_policies]=true'
+gh api -X POST repos/griefzz/stickgame/environments/production/deployment-branch-policies -f name=main -f type=branch
 ```
 
 | Secret | Required | Meaning |
