@@ -145,31 +145,6 @@ const land = (p: PState) => { for (let i = 0; i < 300 && !p.g; i++) step(p, 0); 
   step(pj, B_JUMP | B_JUMP_P, 1, 1);
   for (let i = 0; i < 8; i++) step(pj, B_JUMP, 1, 1);
   step(pj, B_JUMP | B_JUMP_P, 1, 1);
-  // Slide: running at the long wall carries you up the curve; the sphere does the same.
-  for (const key of ["slide", "sphere"]) {
-    const si = ARENAS.findIndex((x) => x.key === key);
-    const ps = newPState(0, 0, 0, si);
-    let top = 0;
-    for (let i = 0; i < 120; i++) { step(ps, 0, 0, 1); top = Math.max(top, ps.y); }
-    check(`${key}: running into the curved edge rides up it`, top > 1.5 && playerIn(ARENAS[si], ps, 1e-6), `peak ${top.toFixed(2)} m`);
-  }
-  // Sphere: a dropped lob settles on the floor and stays inside.
-  {
-    const si = ARENAS.findIndex((x) => x.key === "sphere");
-    const k = newKin(si); k.lob = true; k.y = 8; k.vx = 9; k.vz = 4;
-    for (let i = 0; i < 6000; i++) advanceBall(k, 1 / 600);
-    check("sphere: a lob comes to rest on the floor", Math.abs(k.y - BALL_R) < 1e-3 && Math.hypot(k.vx, k.vz) < 0.5 && ballIn(ARENAS[si], k, 1e-6), `y=${k.y.toFixed(3)} v=${Math.hypot(k.vx, k.vz).toFixed(2)}`);
-  }
-  // Maze: the inner walls stop the ball dead-on and stop players.
-  {
-    const mi = ARENAS.findIndex((x) => x.key === "maze");
-    const k = newKin(mi); k.x = 6; k.y = 3; k.vz = -40; // straight at the inner wall at z = -6.5
-    for (let i = 0; i < 120; i++) advanceBall(k, 1 / 600);
-    check("maze: inner walls bounce the ball", k.vz > 0 && k.z > -6.5, `z=${k.z.toFixed(2)} vz=${k.vz.toFixed(1)}`);
-    const pm = newPState(6, 0, 0, mi);
-    for (let i = 0; i < 120; i++) step(pm, 0, 0, -1);
-    check("maze: players can't walk through inner walls", pm.z > -6.5 && pm.z < -5.8, `z=${pm.z.toFixed(2)}`);
-  }
   check("circle: wall jump kicks back toward the centre", pj.wj === 1 && pj.vx < -4 && pj.vz < -4, `v=(${pj.vx.toFixed(1)}, ${pj.vz.toFixed(1)})`);
 }
 

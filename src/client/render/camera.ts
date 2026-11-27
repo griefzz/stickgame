@@ -49,7 +49,7 @@ export function updateCamera(dt: number, rt: number, ball: { x: number; y: numbe
   const bx = ball.on ? ball.x : 0, by = ball.on ? ball.y : 3, bz = ball.on ? ball.z : 0;
   let fov = 42, rate = 3.2;
   if (ar.view === "top") {
-    // Overhead (maze): the whole floor in view, tilted a touch so players still read as figures.
+    // Overhead: the whole floor in view, tilted a touch so players still read as figures.
     const u = Math.tan((23 * Math.PI) / 180);
     const D = Math.max((ar.hz + 3) / u, (ar.hx + 2) / (u * aspect)) + 8; // room for the HUD top and bottom
     tPos.set(0, D * 0.95, D * 0.31);

@@ -51,11 +51,16 @@ export interface Slot {
   lastActive: number;  // wall time of the last input that did anything (AFK check)
   weapon: number;      // index into WEAPONS
   held: boolean;       // swing button held (for charging)
+  // Training only: a smash whose timing hasn't been reported yet. late: how long before the
+  // swing the ball went past (null if it didn't); watch: the swing missed, so wait for the ball.
+  tm: { tP: number; late: number | null; watch: boolean } | null;
 }
 
 const IDLE_STEP_AFTER = 0.25;   // no input for this long: the server steps the player itself
 const AFK_TIMEOUT = 75;         // seconds of doing nothing before a human is removed
 const MATCH_TIME_LIMIT = 600;   // hard cap; the player with the most stocks wins
+const TRAIN_COUNTDOWN = 1;      // training starts after this many seconds
+const TRAIN_WATCH = 0.8;        // training: after a missed swing, how long to wait for the ball to arrive
 
 export interface BallState {
   st: number;
@@ -96,13 +101,16 @@ export class Match {
   onConnRemoved: (c: Conn) => void = () => {};
   roomCode: string | null;
   arena: number;
+  /** Solo practice: nobody can be K.O.'d, there's no time limit, and every smash's timing is reported. */
+  training: boolean;
 
-  constructor(entrants: Entrant[], practice: boolean, onEnd: (m: Match) => void, roomCode: string | null = null, arena = 0) {
+  constructor(entrants: Entrant[], practice: boolean, onEnd: (m: Match) => void, roomCode: string | null = null, arena = 0, training = false) {
     this.roomCode = roomCode;
     this.arena = ARENAS[arena] ? arena : 0;
     this.practice = practice;
+    this.training = training;
     this.onEnd = onEnd;
-    this.cdEnd = this.t + COUNTDOWN + 0.6;
+    this.cdEnd = this.t + (training ? TRAIN_COUNTDOWN : COUNTDOWN + 0.6);
     // Random seats, so colours and spawn corners vary even in 2- and 3-player matches.
     const order = Array.from({ length: MAX_PLAYERS }, (_, i) => i).sort(() => Math.random() - 0.5);
     const bySlot: (Entrant | null)[] = Array(MAX_PLAYERS).fill(null);
@@ -116,7 +124,7 @@ export class Match {
         idx: i, name: e.name, conn: e.conn, bot: e.bot ? new Bot(i) : null,
         p: newPState(sp.x, sp.z, w, this.arena), alive: true, stocks: STOCKS, out: false, gone: false, frozen: false,
         invulnUntil: 0, elim: 0, swing: null, lastSeq: 0, tokens: 20, tokenT: this.t,
-        lastInput: this.t, lastActive: this.t, weapon: w, held: false,
+        lastInput: this.t, lastActive: this.t, weapon: w, held: false, tm: null,
       };
       this.slots.push(s);
       if (e.conn) { e.conn.match = this; e.conn.slot = i; e.conn.state = "match"; }
@@ -128,7 +136,7 @@ export class Match {
     const roster: (RosterEntry | null)[] = this.slots.map((s) => (s ? { n: s.name, b: s.bot ? 1 : 0, w: s.weapon } : null));
     for (const s of this.slots) {
       if (s?.conn) {
-        s.conn.send(JSON.stringify({ t: "go", slot: s.idx, roster, st: q3(this.t), cdEnd: q3(this.cdEnd), practice: practice ? 1 : 0, rm: roomCode, ar: this.arena }));
+        s.conn.send(JSON.stringify({ t: "go", slot: s.idx, roster, st: q3(this.t), cdEnd: q3(this.cdEnd), practice: practice ? 1 : 0, rm: roomCode, ar: this.arena, tr: training ? 1 : 0 }));
       }
     }
     this.after(this.cdEnd - this.t, () => {
@@ -188,6 +196,7 @@ export class Match {
     if (r) {
       const tP = Math.max(wall - MAX_REWIND, Math.min(wall, inp.t));
       s.swing = { tP, kind: r, used: false };
+      if (this.training) s.tm = r === 1 && this.phase === PH_PLAY ? { tP, late: this.lateBy(s, tP), watch: false } : null;
       if (this.phase === PH_PLAY) this.tryRewind(s, tP, wall);
     }
   }
@@ -273,6 +282,8 @@ export class Match {
     s.p.af = s.p.f; // aim window during the freeze is centred on where they faced at contact
     if (s.swing) s.swing.used = true;
     this.event({ k: "hit", s: s.idx, x: q3(x), y: q3(y), z: q3(z), spd: q3(b.speed), hs: q3(hs), bu: bunt ? 1 : 0, pf: perfect ? 1 : 0, n: b.hits });
+    if (this.training && s.tm && s.swing && !bunt) this.timing(s, perfect ? "pf" : "ok", contactT - s.swing.tP);
+    s.tm = null;
   }
 
   release() {
@@ -472,10 +483,11 @@ export class Match {
         if (this.ended) return;
       }
     }
-    if (this.phase === PH_PLAY && t - this.cdEnd > MATCH_TIME_LIMIT) { this.gameOver(); return; }
+    if (this.phase === PH_PLAY && !this.training && t - this.cdEnd > MATCH_TIME_LIMIT) { this.gameOver(); return; }
 
     this.pushApart();
     this.stepBall(t);
+    if (this.training) this.trainingTick(t);
     if (!this.ended) this.snapshot();
   }
 
@@ -529,7 +541,7 @@ export class Match {
     const reachOf = (s: Slot) => (SWING.hitR * weaponOf(s.weapon).reach + BALL_R) ** 2;
     const hurt2 = (PLAYER.radius + BALL_R) ** 2;
     const c = { x: 0, y: 0, z: 0 };
-    const harmful = b.owner >= 0 && !k.lob;
+    const harmful = b.owner >= 0 && !k.lob && !this.training;
 
     for (let i = 0; i < n; i++) {
       const ts = t - DT + (i + 1) * h;
@@ -547,6 +559,7 @@ export class Match {
         if (d2 <= reachOf(s) && d2 < hitD) { hitD = d2; hitBy = s; }
       }
       if (hitBy) { this.doHit(hitBy, k.x, k.y, k.z, ts); break; }
+      if (this.training) this.watchArrival(ts, k);
 
       if (harmful) {
         let victim: Slot | null = null;
@@ -557,11 +570,83 @@ export class Match {
         if (victim) { this.startPending(victim, ts); break; }
       }
     }
-    // Keep ~0.3 s of path for lag compensation.
-    const cutoff = t - MAX_REWIND - 0.1;
+    // Keep ~0.3 s of path for lag compensation (1 s in training, to time late swings).
+    const cutoff = t - (this.training ? 1 : MAX_REWIND + 0.1);
     let drop = 0;
     while (drop < this.hist.length && this.hist[drop].t < cutoff) drop++;
     if (drop) this.hist.splice(0, drop);
+  }
+
+  // ---------------------------------------------------------------- training
+
+  /** Reports a smash's timing. sec: for hits and early misses, how long after the swing started
+   *  the ball reached the bat; for late misses, how long after the ball went past the swing started. */
+  timing(s: Slot, r: "pf" | "ok" | "early" | "late" | "miss", sec = 0) {
+    this.event({ k: "tm", s: s.idx, r, ms: Math.round(sec * 1000) });
+  }
+
+  private reach2(s: Slot) { return (SWING.hitR * weaponOf(s.weapon).reach + BALL_R) ** 2; }
+
+  /** How long before tP the ball last left this player's reach, after coming in from outside it. */
+  lateBy(s: Slot, tP: number): number | null {
+    const b = this.ball;
+    if (b.st !== BS_FLIGHT) return null;
+    const c = hitCentre(s.p, { x: 0, y: 0, z: 0 }), r2 = this.reach2(s);
+    let wasOut = false, last = -1;
+    for (const h of this.hist) {
+      if (h.e !== b.epoch || h.t >= tP) continue;
+      const dx = h.x - c.x, dy = h.y - c.y, dz = h.z - c.z;
+      if (dx * dx + dy * dy + dz * dz > r2) wasOut = true;
+      else if (wasOut) last = h.t;
+    }
+    return last >= 0 ? tP - last : null;
+  }
+
+  /** Reports a missed swing as early once the ball reaches the player. */
+  watchArrival(ts: number, k: BallKin) {
+    const c = { x: 0, y: 0, z: 0 };
+    for (const s of this.slots) {
+      const m = s?.tm;
+      if (!s || !m || !m.watch) continue;
+      hitCentre(s.p, c);
+      const dx = k.x - c.x, dy = k.y - c.y, dz = k.z - c.z;
+      if (dx * dx + dy * dy + dz * dz <= this.reach2(s)) { this.timing(s, "early", ts - m.tP); s.tm = null; }
+    }
+  }
+
+  trainingTick(t: number) {
+    for (const s of this.slots) {
+      const m = s?.tm;
+      if (!s || !m) continue;
+      if (!m.watch) {
+        if (t < m.tP + SWING.act1) continue;
+        // The swing ended without a hit.
+        if (m.late !== null) { this.timing(s, "late", m.late); s.tm = null; }
+        else m.watch = true;
+      } else if (t > m.tP + TRAIN_WATCH) { this.timing(s, "miss"); s.tm = null; }
+    }
+  }
+
+  /** Puts every player back on their spawn point and serves a fresh ball. */
+  trainingReset() {
+    if (!this.training || this.ended) return;
+    const a = arenaOf(this.arena);
+    for (const s of this.slots) {
+      if (!s || s.gone) continue;
+      const sp = spawnPoint(a, s.idx);
+      s.p = newPState(sp.x, sp.z, s.weapon, this.arena);
+      s.alive = true; s.frozen = false; s.swing = null; s.tm = null; s.held = false;
+      this.event({ k: "spawn", s: s.idx, x: q3(sp.x), z: q3(sp.z) });
+    }
+    if (this.phase === PH_PLAY) this.serve();
+  }
+
+  trainingArena(a: number) {
+    if (!this.training || this.ended || !ARENAS[a] || a === this.arena) return;
+    this.arena = a;
+    this.ball.k.ar = a;
+    this.event({ k: "arena", ar: a });
+    this.trainingReset();
   }
 
   snapshot() {

@@ -229,7 +229,7 @@ function makeFloor(a: Arena) {
     const lines = (g: CanvasRenderingContext2D, col: string, w: number) => {
       g.strokeStyle = col; g.lineWidth = w;
       if (a.shell?.kind === "roundbox") {
-        // The slide: mark where the flat floor ends and the curve begins.
+        // Rounded box: mark where the flat floor ends and the curve begins.
         const fx = a.shell.hx - a.shell.r, fz = a.shell.hz - a.shell.r;
         const [x0, y0] = toC(-fx, -fz), [x1, y1] = toC(fx, fz);
         g.beginPath(); g.rect(x0, y0, x1 - x0, y1 - y0);
@@ -393,7 +393,7 @@ function buildSphere(G: THREE.Group, a: Arena, s: { cy: number; r: number }) {
   }
 }
 
-/** Box with rounded edges (the slide): a subdivided box with each vertex pushed onto the rounding. */
+/** Box with rounded edges: a subdivided box with each vertex pushed onto the rounding. */
 function roundBoxGeometry(s: { hx: number; hy: number; hz: number; r: number }, step = 0.7) {
   const g = new THREE.BoxGeometry(2 * s.hx, 2 * s.hy, 2 * s.hz, Math.ceil((2 * s.hx) / step), Math.ceil((2 * s.hy) / step), Math.ceil((2 * s.hz) / step));
   const p = g.attributes.position, n = g.attributes.normal;
@@ -410,7 +410,7 @@ function roundBoxGeometry(s: { hx: number; hy: number; hz: number; r: number }, 
   return g;
 }
 
-/** The slide: floor turf runs up the curves, the rest is glass. */
+/** Rounded box: floor turf runs up the curves, the rest is glass. */
 function buildRoundBox(G: THREE.Group, a: Arena, s: { hx: number; hy: number; hz: number; r: number }, floorMat: THREE.MeshStandardMaterial) {
   const g = roundBoxGeometry(s);
   // Floor face (BoxGeometry group 3, -y): UVs from x/z so the painted floor lines up.
@@ -459,7 +459,7 @@ function buildRoundBox(G: THREE.Group, a: Arena, s: { hx: number; hy: number; hz
   }
 }
 
-/** Solid obstacles inside the arena (maze walls, the rocket's porthole): glass with neon rims. */
+/** Solid obstacles inside the arena: glass with neon rims. */
 function buildBlocks(G: THREE.Group, a: Arena) {
   if (!a.blocks.length) return;
   const H = a.top;

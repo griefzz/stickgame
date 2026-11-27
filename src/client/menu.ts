@@ -4,7 +4,7 @@ import type { RoomState, RosterEntry } from "../shared/protocol";
 import { sfx } from "./audio";
 import { captureNext, type UiEvent } from "./input";
 import {
-  ACTIONS, SLOTS as BIND_SLOTS, kbBinds, kbHtml, keyLabel, onBindsChange, padBinds, padHtml, padLabel, resetBinds, setKb, setPad, type Action,
+  ACTIONS, SLOTS as BIND_SLOTS, firstKb, firstPad, kbBinds, kbHtml, keyLabel, onBindsChange, padBinds, padHtml, padLabel, resetBinds, setKb, setPad, type Action,
 } from "./binds";
 
 export type Screen = "title" | "queue" | "room" | "pause" | "results" | "controls" | "none";
@@ -34,6 +34,10 @@ export class Menu {
   onlineEl = $("onlineCount");
   findBtn = $<HTMLButtonElement>("btnFind");
   practiceBtn = $<HTMLButtonElement>("btnPractice");
+  trainingBtn = $<HTMLButtonElement>("btnTraining");
+  trainArenaBtn = $<HTMLButtonElement>("btnTrainArena");
+  trainArena = 0;
+  training = false;
   roomBtn = $<HTMLButtonElement>("btnRoom");
   joinBtn = $<HTMLButtonElement>("btnJoin");
   codeEl = $<HTMLInputElement>("codeInput");
@@ -62,6 +66,9 @@ export class Menu {
 
   onFind = () => {};
   onPractice = () => {};
+  onTraining = () => {};
+  onTrainArena = (_a: number) => {};
+  onTrainReset = () => {};
   onCancel = () => {};
   onResume = () => {};
   onLeave = () => {};
@@ -90,6 +97,10 @@ export class Menu {
     this.renderBots();
     try { const w = parseInt(localStorage.getItem("oc.weapon") ?? "0", 10); if (WEAPONS[w]) this.weapon = w; } catch {}
     this.renderWeapon();
+    try { const a = parseInt(localStorage.getItem("oc.trainArena") ?? "0", 10); if (ARENAS[a]) this.trainArena = a; } catch {}
+    this.renderTrainArena();
+    this.trainArenaBtn.addEventListener("click", (e) => this.cycleTrainArena((e.target as HTMLElement).id === "trainArenaPrev" ? -1 : 1));
+    $("btnTrainReset").addEventListener("click", () => this.onTrainReset());
     this.roomWeaponBtn.addEventListener("click", (e) => this.cycleWeapon((e.target as HTMLElement).id === "roomWeaponPrev" ? -1 : 1));
     this.roomArenaBtn.addEventListener("click", (e) => this.cycleRoomArena((e.target as HTMLElement).id === "roomArenaPrev" ? -1 : 1));
     this.weaponBtn.addEventListener("click", (e) => {
@@ -111,6 +122,7 @@ export class Menu {
     $("btnShuffle").addEventListener("click", () => { this.nameEl.value = randomName(); this.commitName(); });
     this.findBtn.addEventListener("click", () => { this.commitName(); this.onFind(); });
     this.practiceBtn.addEventListener("click", () => { this.commitName(); this.onPractice(); });
+    this.trainingBtn.addEventListener("click", () => { this.commitName(); this.onTraining(); });
     this.roomBtn.addEventListener("click", () => { this.commitName(); this.onRoomCreate(); });
     const join = () => {
       const code = this.codeEl.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 4);
@@ -191,6 +203,7 @@ export class Menu {
     // Left/right on the weapon picker changes the weapon instead of moving focus.
     if ((e === "left" || e === "right") && (document.activeElement === this.weaponBtn || document.activeElement === this.roomWeaponBtn)) { this.cycleWeapon(e === "left" ? -1 : 1); return; }
     if ((e === "left" || e === "right") && document.activeElement === this.roomArenaBtn) { this.cycleRoomArena(e === "left" ? -1 : 1); return; }
+    if ((e === "left" || e === "right") && document.activeElement === this.trainArenaBtn) { this.cycleTrainArena(e === "left" ? -1 : 1); return; }
     if ((e === "up" || e === "down") && cur >= 0 && items[cur].dataset.row !== undefined) {
       // Bind table: up/down keeps the column.
       const r = +items[cur].dataset.row! + (e === "up" ? -1 : 1), c = +items[cur].dataset.col!;
@@ -256,6 +269,7 @@ export class Menu {
       row(`${kbHtml("aimHigh")} / ${kbHtml("aimLow")}`, "Aim high / low"),
       row(`${kbHtml("curveL")} / ${kbHtml("curveR")}`, "Curve left / right"),
       row(`${kbHtml("mute")} <kbd>Esc</kbd>`, "Mute, menu"),
+      row(kbHtml("reset"), "Reset in training"),
       row(kbHtml("cam"), "Director camera when spectating"),
       row("<kbd>Alt</kbd>+<kbd>Enter</kbd>", "Full screen"),
     ].join("");
@@ -267,8 +281,10 @@ export class Menu {
       row(padHtml("bunt"), "Bunt"),
       row("<kbd>R-Stick</kbd>", "Aim high / low · curve"),
       row(`${padHtml("mute")} <kbd>Start</kbd>`, "Mute, menu"),
+      row(padHtml("reset"), "Reset in training"),
       row(padHtml("cam"), "Director camera when spectating"),
     ].join("");
+    $("trainResetKey").innerHTML = `<span class="kb-only">${esc(firstKb("reset"))}</span><span class="pad-only">${esc(firstPad("reset"))}</span>`;
     const b = (a: Action) => kbBinds(a).filter(Boolean).map((c) => `<b>${keyLabel(c)}</b>`).join("/") || "<b>—</b>";
     const p = (a: Action) => padBinds(a).filter((i) => i >= 0).map((i) => `<b>${padLabel(i)}</b>`).join("/") || "<b>—</b>";
     $("keysKb").innerHTML = `${b("swing")} swing (hold to charge) · ${b("bunt")} bunt · ${b("jump")} jump (again in air or on a wall) · ${b("dash")} air dash · hold ${b("aimHigh")}/${b("aimLow")} aim high/low · hold ${b("curveL")}/${b("curveR")} curve · <b>Esc</b> menu`;
@@ -325,6 +341,7 @@ export class Menu {
     this.statusEl.className = "net " + status;
     this.findBtn.disabled = !this.connected;
     this.practiceBtn.disabled = !this.connected;
+    this.trainingBtn.disabled = !this.connected;
     this.roomBtn.disabled = !this.connected;
     this.joinBtn.disabled = !this.connected;
     if (this.connected && this.screen === "title" && document.activeElement !== this.nameEl) this.setNavFocus(this.findBtn, false);
@@ -481,6 +498,28 @@ export class Menu {
     $("roomWeaponName").textContent = `Your weapon: ${w.name}`;
     $("roomWeaponTrait").innerHTML = `<b>${esc(w.trait)}</b>${esc(w.desc)}`;
   }
+
+  // ---------------------------------------------------------------- training
+
+  /** Switches the pause menu between its match and training versions. */
+  setTraining(on: boolean) {
+    this.training = on;
+    $("btnTrainReset").hidden = !on;
+    this.trainArenaBtn.hidden = !on;
+    this.camBtn.hidden = on;
+    $("pauseHead").textContent = on ? "Training" : "Paused · the match keeps running";
+    $("leaveLabel").textContent = on ? "Leave training" : "Leave match";
+  }
+
+  cycleTrainArena(d: number) {
+    this.trainArena = (this.trainArena + d + ARENAS.length) % ARENAS.length;
+    try { localStorage.setItem("oc.trainArena", String(this.trainArena)); } catch {}
+    this.renderTrainArena();
+    sfx.ui();
+    this.onTrainArena(this.trainArena);
+  }
+
+  renderTrainArena() { $("trainArenaName").textContent = `Arena: ${ARENAS[this.trainArena].name}`; }
 
   /** Host only: Random, then each arena in turn. */
   cycleRoomArena(d: number) {

@@ -99,8 +99,9 @@ net.connect();
 
 function startMatch(m: Extract<ServerMsg, { t: "go" }>) {
   if (match) match.dispose();
-  const practice = !!m.practice;
-  const cm = new ClientMatch(net, m.slot, m.roster, m.cdEnd, practice, m.rm, m.ar ?? 0);
+  const practice = !!m.practice, training = !!m.tr;
+  const cm = new ClientMatch(net, m.slot, m.roster, m.cdEnd, practice, m.rm, m.ar ?? 0, training);
+  menu.setTraining(training);
   cm.onOver = (rank, w) => {
     setGameActive(false);
     menu.showResults(rank, w, m.roster, m.slot, practice);
@@ -119,6 +120,7 @@ function endMatch() {
   paused = false;
   setGameActive(false);
   document.body.classList.remove("ingame");
+  menu.setTraining(false);
 }
 
 function setPaused(p: boolean) {
@@ -174,6 +176,9 @@ function joinQueue() {
 menu.onFind = () => { unlockAudio(); joinQueue(); };
 menu.onBots = (on) => { if (menu.screen === "queue") net.send({ t: "bots", on: on ? 1 : 0 }); };
 menu.onPractice = () => { unlockAudio(); net.send({ t: "pr" }); };
+menu.onTraining = () => { unlockAudio(); net.send({ t: "tr", a: menu.trainArena }); };
+menu.onTrainArena = (a) => { if (match?.training) net.send({ t: "tra", a }); };
+menu.onTrainReset = () => { net.send({ t: "trr" }); setPaused(false); };
 menu.onCancel = () => { net.send({ t: "x" }); menu.show("title"); };
 menu.onResume = () => setPaused(false);
 menu.onLeave = () => { net.send({ t: "lv" }); endMatch(); menu.show(menu.room ? "room" : "title"); };
@@ -213,6 +218,7 @@ onUi((e) => {
   if (e === "cam") { toggleDirector(); return; }
   if (e === "mute") { toggleMute(); return; }
   if (e === "full") { toggleFullscreen(); return; }
+  if (e === "reset") { if (match?.training && !match.over && menu.screen !== "controls") net.send({ t: "trr" }); return; }
   if (match && !match.over && menu.screen === "none") {
     if (e === "start") setPaused(true);
     return;

@@ -14,7 +14,7 @@ import {
   B_CHG, B_CT, B_CV, PH_COUNTDOWN, PH_OVER, P_AIRJ, P_AX, P_DASH, P_FLAGS, P_STOCKS, P_WALLJ, decodeP, type RosterEntry,
 } from "../shared/protocol";
 import { sfx, stopCharge } from "./audio";
-import { banner, callout, countdown, hudSetup, hudShow, hudUpdate, netInfo, spectateHint, type HudPlayer } from "./hud";
+import { banner, callout, countdown, hudSetup, hudShow, hudUpdate, netInfo, spectateHint, trainResult, trainSetup, type HudPlayer } from "./hud";
 import { rumble, sampleInput } from "./input";
 import type { Net } from "./net";
 import { clearTrail, pushTrail, setTelegraph, updateBall } from "./render/ball";
@@ -38,6 +38,7 @@ export class ClientMatch {
   slot: number;
   roster: (RosterEntry | null)[];
   practice: boolean;
+  training: boolean;
   roomCode: string | null;
   arena: number;
   cdEnd: number;
@@ -83,12 +84,13 @@ export class ClientMatch {
     this.timers.push(window.setTimeout(() => { if (!this.disposed) fn(); }, ms));
   }
 
-  constructor(net: Net, slot: number, roster: (RosterEntry | null)[], cdEnd: number, practice: boolean, roomCode: string | null = null, arena = 0) {
+  constructor(net: Net, slot: number, roster: (RosterEntry | null)[], cdEnd: number, practice: boolean, roomCode: string | null = null, arena = 0, training = false) {
     this.net = net;
     this.slot = slot;
     this.roster = roster;
     this.cdEnd = cdEnd;
     this.practice = practice;
+    this.training = training;
     this.roomCode = roomCode;
     this.arena = arena;
     this.kin.ar = arena;
@@ -104,6 +106,7 @@ export class ClientMatch {
     setTelegraph(false);
     cancelFocus();
     hudSetup(roster, slot);
+    trainSetup(training, weaponOf(roster[slot]?.w).perfect, SLOTS[slot].color);
     hudShow(true);
     countdown(null);
   }
@@ -119,6 +122,7 @@ export class ClientMatch {
     stopCharge();
     countdown(null);
     hudShow(false);
+    trainSetup(false);
     setCamMode("arena");
     spectateHint(false, false);
   }
@@ -175,8 +179,22 @@ export class ClientMatch {
         clearTrail();
         this.lastFreeze = 0;
         this.koHold = null;
+        // A training reset can serve while the ball is still on someone's bat.
+        killRing(this.chargeRing);
+        this.chargeRing = null;
+        stopCharge();
         break;
       }
+      case "arena": // training: the server switched arenas
+        this.arena = e.ar;
+        this.kin.ar = this.pred.ar = this.prevPred.ar = e.ar;
+        setArena(e.ar);
+        clearTrail();
+        banner(arenaOf(e.ar).name.toUpperCase(), "Training arena", "#ffffff");
+        break;
+      case "tm":
+        if (e.s === this.slot) trainResult(e.r, e.ms);
+        break;
       case "hit": {
         const c = slotColor(e.s), k = speedFeel(e.spd);
         const at = { x: e.x, y: e.y, z: e.z };
@@ -494,7 +512,7 @@ export class ClientMatch {
     const meV = views[this.slot];
     updateCamera(dt, rt, { x: this.ballPos.x, y: this.ballPos.y, z: this.ballPos.z, on: this.ballOn }, meV && meV.alive ? meV : null);
     hudUpdate(dt, { on: this.ballOn, speed, owner, frozen, hitstop: state === BS_HITSTOP, charge, freezeLeft: left, lastFreeze: this.lastFreeze, hits, hitter, threat: this.threat }, hudP);
-    netInfo(Math.round(this.net.rtt * 1000), this.practice ? "PRACTICE" : this.roomCode ? `ROOM ${this.roomCode}` : "");
+    netInfo(Math.round(this.net.rtt * 1000), this.training ? "TRAINING" : this.practice ? "PRACTICE" : this.roomCode ? `ROOM ${this.roomCode}` : "");
   }
 
   tick(now: number) {

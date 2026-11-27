@@ -6,7 +6,7 @@ export type Action =
   | "up" | "down" | "left" | "right"
   | "jump" | "dash" | "swing" | "bunt"
   | "aimHigh" | "aimLow" | "curveL" | "curveR"
-  | "cam" | "mute";
+  | "reset" | "cam" | "mute";
 
 export const ACTIONS: { id: Action; label: string; pad: boolean }[] = [
   { id: "up", label: "Move up", pad: false },
@@ -21,6 +21,7 @@ export const ACTIONS: { id: Action; label: string; pad: boolean }[] = [
   { id: "aimLow", label: "Aim low", pad: false },
   { id: "curveL", label: "Curve left", pad: false },
   { id: "curveR", label: "Curve right", pad: false },
+  { id: "reset", label: "Reset (training)", pad: true },
   { id: "cam", label: "Director camera (spectating)", pad: true },
   { id: "mute", label: "Mute", pad: true },
 ];
@@ -33,9 +34,9 @@ const DEFAULTS: Binds = {
     up: ["KeyW", "ArrowUp"], down: ["KeyS", "ArrowDown"], left: ["KeyA", "ArrowLeft"], right: ["KeyD", "ArrowRight"],
     jump: ["Space", ""], dash: ["ShiftLeft", "ShiftRight"], swing: ["KeyJ", "Mouse0"], bunt: ["KeyK", "Mouse2"],
     aimHigh: ["KeyR", ""], aimLow: ["KeyF", ""], curveL: ["KeyQ", ""], curveR: ["KeyE", ""],
-    cam: ["KeyC", ""], mute: ["KeyM", ""],
+    reset: ["KeyT", ""], cam: ["KeyC", ""], mute: ["KeyM", ""],
   },
-  pad: { jump: [0, -1], dash: [4, -1], swing: [2, 7], bunt: [1, 6], cam: [3, -1], mute: [8, -1] },
+  pad: { jump: [0, -1], dash: [4, -1], swing: [2, 7], bunt: [1, 6], reset: [5, -1], cam: [3, -1], mute: [8, -1] },
 };
 
 const clone = (b: Binds): Binds => JSON.parse(JSON.stringify(b));
@@ -52,6 +53,17 @@ function load(): Binds {
         if (Array.isArray(k)) b.kb[a.id] = Array.from({ length: SLOTS }, (_, i) => (typeof k[i] === "string" ? k[i] : ""));
         const p = s.pad?.[a.id];
         if (a.pad && Array.isArray(p)) b.pad[a.id] = Array.from({ length: SLOTS }, (_, i) => (Number.isInteger(p[i]) ? p[i] : -1));
+      }
+      // An action added after these binds were saved: drop any default the player already uses elsewhere.
+      for (const a of ACTIONS) {
+        if (!Array.isArray(s.kb?.[a.id])) {
+          const used = new Set(ACTIONS.filter((x) => x.id !== a.id).flatMap((x) => b.kb[x.id]).filter(Boolean));
+          b.kb[a.id] = b.kb[a.id].map((c) => (used.has(c) ? "" : c));
+        }
+        if (a.pad && !Array.isArray(s.pad?.[a.id])) {
+          const used = new Set(ACTIONS.filter((x) => x.id !== a.id).flatMap((x) => b.pad[x.id] ?? []).filter((i) => i >= 0));
+          b.pad[a.id] = (b.pad[a.id] ?? []).map((i) => (used.has(i) ? -1 : i));
+        }
       }
     }
   } catch {}

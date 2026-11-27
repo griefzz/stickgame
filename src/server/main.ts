@@ -43,12 +43,12 @@ function randomBots(n: number, taken: string[]): string[] {
   return pool.slice(0, n).map((b) => b + " (BOT)");
 }
 
-function startMatch(list: Conn[], practice: boolean, opts: { bots?: number; room?: Room; arena?: number } = {}): Match | null {
+function startMatch(list: Conn[], practice: boolean, opts: { bots?: number; room?: Room; arena?: number; training?: boolean } = {}): Match | null {
   const players = [...new Set(list)].filter((c) => conns.has(c) && !c.match);
   if (!players.length) return null;
   for (const c of players) unqueue(c);
   const entrants: Entrant[] = players.map((c) => ({ conn: c, name: c.name, bot: false, w: c.weapon }));
-  const nBots = practice ? MAX_PLAYERS - entrants.length : opts.bots ?? botsFor(players);
+  const nBots = practice ? MAX_PLAYERS - entrants.length : opts.training ? 0 : opts.bots ?? botsFor(players);
   for (const n of randomBots(nBots, players.map((p) => p.name))) entrants.push({ conn: null, name: n, bot: true, w: Math.floor(Math.random() * WEAPONS.length) });
   const room = opts.room;
   const m = new Match(entrants, practice, (done) => {
@@ -59,7 +59,7 @@ function startMatch(list: Conn[], practice: boolean, opts: { bots?: number; room
       for (const c of room.members) if (!c.match) c.state = "room";
       if (rooms.has(room.code)) sendRoom(room);
     }
-  }, room?.code ?? null, opts.arena ?? pickArena());
+  }, room?.code ?? null, opts.arena ?? pickArena(), !!opts.training);
   // Someone leaving a room's match (quit, AFK, disconnect) goes back to the room.
   m.onConnRemoved = (c) => {
     if (!c.room || !conns.has(c)) return;
@@ -68,7 +68,7 @@ function startMatch(list: Conn[], practice: boolean, opts: { bots?: number; room
     if (r) c.send(roomMsg(r, c));
   };
   matches.add(m);
-  log(`match ${m.id} start: ${entrants.map((e) => e.name).join(", ")}${practice ? " [practice]" : ""}${room ? ` [room ${room.code}]` : ""}`);
+  log(`match ${m.id} start: ${entrants.map((e) => e.name).join(", ")}${practice ? " [practice]" : ""}${opts.training ? " [training]" : ""}${room ? ` [room ${room.code}]` : ""}`);
   return m;
 }
 
@@ -262,6 +262,16 @@ function onMessage(c: Conn, raw: string | Buffer) {
     case "pr":
       if (c.state === "queue") { unqueue(c); c.state = "menu"; }
       if (c.state === "menu" && !c.match) startMatch([c], true);
+      return;
+    case "tr": // start training: solo, in the arena the player picked
+      if (c.state === "queue") { unqueue(c); c.state = "menu"; }
+      if (c.state === "menu" && !c.match) startMatch([c], false, { training: true, arena: Number.isInteger(m.a) && ARENAS[m.a] ? m.a : 0 });
+      return;
+    case "tra": // training: switch arenas
+      if (c.match?.training && Number.isInteger(m.a)) c.match.trainingArena(m.a);
+      return;
+    case "trr": // training: reset the player and the ball
+      if (c.match?.training) c.match.trainingReset();
       return;
     case "lv":
       unqueue(c);

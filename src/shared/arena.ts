@@ -1,13 +1,12 @@
 // Arena shapes. Most arenas are a floor plan extruded 12 m up: polygons are defined by
 // their corners (walls derived from the edges), the circle is a true circle. On top of
-// that an arena can have:
-//   - blocks: solid full-height obstacles inside (maze walls, the rocket's porthole),
-//   - a shell: a smooth 3D surface instead of flat floor + vertical walls (the sphere,
-//     the slide). Players and the ball collide with the shell in 3D, so running into a
-//     curve carries you up it.
+// that an arena can have (no current arena uses these):
+//   - blocks: solid full-height obstacles inside,
+//   - a shell: a smooth 3D surface instead of flat floor + vertical walls. Players and the
+//     ball collide with the shell in 3D, so running into a curve carries you up it.
 //
 // Convex floor plans collide against each wall's infinite line, which is exact and cheap.
-// Non-convex ones (star, plus, bowtie, rocket) collide against wall segments, with the
+// Non-convex ones (star, plus) collide against wall segments, with the
 // inward-pointing corners treated as round posts.
 import { BALL_SPAWN, HX, HY, HZ, SPAWNS } from "./constants";
 
@@ -27,9 +26,7 @@ export type Shell =
   | { kind: "sphere"; cy: number; r: number }                                  // sphere cut by the floor
   | { kind: "roundbox"; hx: number; hy: number; hz: number; r: number };       // box with every edge rounded
 
-export type ArenaKey =
-  | "box" | "octagon" | "circle" | "star" | "plus" | "bowtie" | "triangle"
-  | "sphere" | "maze" | "rocket" | "slide";
+export type ArenaKey = "box" | "octagon" | "circle" | "star" | "plus";
 
 export interface Arena {
   key: ArenaKey;
@@ -43,7 +40,7 @@ export interface Arena {
   top: number;              // highest point of the inside
   blocks: Block[];
   shell: Shell | null;
-  view: "arena" | "top";    // camera: the usual angled view, or straight down (maze)
+  view: "arena" | "top";    // camera: the usual angled view, or straight down
 }
 
 function fromVerts(key: ArenaKey, name: string, verts: [number, number][], radius = 0): Arena {
@@ -101,66 +98,6 @@ function star(points: number, outer: number, inner: number): Arena {
   return fromVerts("star", "Star", verts);
 }
 
-/** A glass sphere with the floor cutting through its lower part. */
-function sphere(cy: number, r: number): Arena {
-  const a = circle(Math.sqrt(r * r - cy * cy), "sphere", "Sphere");
-  a.shell = { kind: "sphere", cy, r };
-  a.top = cy + r;
-  return a;
-}
-
-/** Long box with every edge rounded (floor-to-wall, wall-to-ceiling and the corners). */
-function slide(hx: number, hz: number, h: number, r: number): Arena {
-  const verts: [number, number][] = [];
-  const seg = 6;
-  // Rounded-rectangle floor plan, corner arcs in order around the perimeter.
-  for (const [cx, cz, a0] of [[hx - r, hz - r, 0], [-(hx - r), hz - r, Math.PI / 2], [-(hx - r), -(hz - r), Math.PI], [hx - r, -(hz - r), (3 * Math.PI) / 2]] as const) {
-    for (let i = 0; i <= seg; i++) {
-      const a = a0 + (i / seg) * (Math.PI / 2);
-      verts.push([cx + r * Math.cos(a), cz + r * Math.sin(a)]);
-    }
-  }
-  const ar = fromVerts("slide", "Slide", verts);
-  ar.shell = { kind: "roundbox", hx, hy: h / 2, hz, r };
-  ar.top = h;
-  return ar;
-}
-
-function maze(): Arena {
-  const a = fromVerts("maze", "Maze", [[-18, -14], [18, -14], [18, 14], [-18, 14]]);
-  a.view = "top";
-  a.top = 7; // low ceiling keeps the ball near the floor, so the overhead view reads well
-  const R = (x0: number, z0: number, x1: number, z1: number): Block => ({ kind: "rect", x0, z0, x1, z1 });
-  a.blocks = [
-    // Plaza around the centre, with gaps in the middle of each side and at the corners.
-    R(-9.5, -7.5, -3, -6.5), R(3, -7.5, 9.5, -6.5),
-    R(-9.5, 6.5, -3, 7.5), R(3, 6.5, 9.5, 7.5),
-    R(-9.5, -4, -8.5, 4), R(8.5, -4, 9.5, 4),
-    // Outer corridors.
-    R(-14, -10.5, -13, -2), R(13, -10.5, 14, -2),
-    R(-14, 2, -13, 10.5), R(13, 2, 14, 10.5),
-    R(-5, -11.5, 5, -10.5), R(-5, 10.5, 5, 11.5),
-    // Stubs that break up the long runs.
-    R(-18, -0.5, -16, 0.5), R(16, -0.5, 18, 0.5),
-    R(-0.5, -14, 0.5, -13.2), R(-0.5, 13.2, 0.5, 14),
-  ];
-  return a;
-}
-
-/** A rocket lying on its side, nose to the right, with a porthole pillar in the body. */
-function rocket(): Arena {
-  const s = 1.15;
-  // Drawn nose-up (nose toward -z), then turned so the nose points to +x.
-  const up: [number, number][] = [
-    [0, -18], [6, -9], [6, 8], [13, 14], [13, 17], [6, 13.5], [3.5, 16],
-    [-3.5, 16], [-6, 13.5], [-13, 17], [-13, 14], [-6, 8], [-6, -9],
-  ];
-  const verts = up.map(([x, z]) => [-(z - 0.5) * s, x * s] as [number, number]);
-  const a = fromVerts("rocket", "Rocket", verts);
-  a.blocks = [{ kind: "circle", x: 6 * s, z: 0, r: 1.8 }];
-  return a;
-}
-
 export const ARENAS: readonly Arena[] = [
   fromVerts("box", "Box", [[-HX, -HZ], [HX, -HZ], [HX, HZ], [-HX, HZ]]),
   regular("octagon", "Octagon", 8, 13),
@@ -170,12 +107,6 @@ export const ARENAS: readonly Arena[] = [
     [-6, -15], [6, -15], [6, -6], [15, -6], [15, 6], [6, 6],
     [6, 15], [-6, 15], [-6, 6], [-15, 6], [-15, -6], [-6, -6],
   ]),
-  fromVerts("bowtie", "Bowtie", [[-15, -12], [15, -12], [3.5, 0], [15, 12], [-15, 12], [-3.5, 0]]),
-  regular("triangle", "Triangle", 3, 9.5),
-  sphere(8, 14),
-  maze(),
-  rocket(),
-  slide(18, 12, 12, 4),
 ];
 export const arenaOf = (i: number | undefined): Arena => ARENAS[i ?? 0] ?? ARENAS[0];
 export const arenaIndex = (key: string) => ARENAS.findIndex((a) => a.key === key);

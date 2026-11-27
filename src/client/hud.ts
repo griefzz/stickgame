@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { OVERCLOCK_SPEED, SLOTS, STOCKS, displaySpeed, speedFeel, weaponOf } from "../shared/constants";
 import type { RosterEntry } from "../shared/protocol";
 import { camera, clamp, reducedMotion } from "./render/scene";
-import { firstKb, firstPad } from "./binds";
+import { firstKb, firstPad, onBindsChange } from "./binds";
 
 const $ = (id: string) => document.getElementById(id)!;
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -186,6 +186,101 @@ export function hudUpdate(dt: number, b: HudBall, players: HudPlayer[]) {
     t.style.display = "";
     t.style.transform = `translate(${s.x.toFixed(1)}px, ${s.y.toFixed(1)}px) translate(-50%, -100%)`;
   });
+}
+
+// ---------------------------------------------------------------- training timing meter
+// The bar is a timeline of the swing: the left end is a swing that started long before the
+// ball arrived, the right end a swing that started after the ball had gone past.
+
+const tr = {
+  panel: $("trainPanel"), res: $("trRes"), detail: $("trDetail"), mark: $("trMark"), ghosts: $("trGhosts"),
+  stats: $("trStats"), keys: $("trKeys"), pfLabel: $("trPfLabel"),
+  zEarly: $("trZEarly"), zGood: $("trZGood"), zPf: $("trZPf"), zLate: $("trZLate"),
+};
+const LEAD_EARLY = 400, LEAD_LATE = -150; // ms at the bar's left and right ends
+const HIT_WINDOW = 200;                     // ms: a swing connects if the ball arrives this soon
+let pfMs = 50;
+let recent: number[] = [];
+let st = { swings: 0, hits: 0, perfect: 0, streak: 0, best: 0 };
+
+/** Bar position (percent from the left) for a swing that started `lead` ms before the ball arrived. */
+const barPos = (lead: number) => ((LEAD_EARLY - Math.max(LEAD_LATE, Math.min(LEAD_EARLY, lead))) / (LEAD_EARLY - LEAD_LATE)) * 100;
+
+function zone(e: HTMLElement, from: number, to: number) {
+  const a = barPos(from), b = barPos(to);
+  e.style.left = `${a}%`;
+  e.style.width = `${b - a}%`;
+}
+
+function renderTrainKeys() {
+  tr.keys.innerHTML = `<span class="kb-only"><b>${esc(firstKb("reset"))}</b> reset · <b>Esc</b> change arena</span>` +
+    `<span class="pad-only"><b>${esc(firstPad("reset"))}</b> reset · <b>Start</b> change arena</span>`;
+}
+onBindsChange(renderTrainKeys);
+
+/** Shows or hides the timing meter. perfect: the weapon's perfect window in seconds. */
+export function trainSetup(on: boolean, perfect = 0.05, color = "#ffffff") {
+  el.hud.classList.toggle("training", on);
+  tr.panel.hidden = !on;
+  if (!on) return;
+  pfMs = Math.round(perfect * 1000);
+  tr.panel.style.setProperty("--c", color);
+  zone(tr.zEarly, LEAD_EARLY, HIT_WINDOW);
+  zone(tr.zGood, HIT_WINDOW, pfMs);
+  zone(tr.zPf, pfMs, 0);
+  zone(tr.zLate, 0, LEAD_LATE);
+  tr.pfLabel.style.left = `${barPos(pfMs / 2)}%`;
+  recent = [];
+  st = { swings: 0, hits: 0, perfect: 0, streak: 0, best: 0 };
+  tr.ghosts.innerHTML = "";
+  tr.mark.hidden = true;
+  tr.res.textContent = "Timing";
+  tr.res.className = "tr-res";
+  tr.detail.textContent = `A swing that starts ${pfMs} ms or less before the ball reaches you is a perfect hit.`;
+  tr.stats.textContent = "No swings yet";
+  renderTrainKeys();
+}
+
+/** One smash's timing from the server (see Match.timing). */
+export function trainResult(r: string, ms: number) {
+  st.swings++;
+  let lead: number | null = ms, big: string, cls: string, detail: string;
+  if (r === "pf") {
+    st.hits++; st.perfect++; st.streak++; st.best = Math.max(st.best, st.streak);
+    big = "Perfect"; cls = "pf"; detail = `Contact ${ms} ms after you swung`;
+  } else {
+    st.streak = 0;
+    if (r === "ok") {
+      st.hits++;
+      big = "Good"; cls = "ok"; detail = `Contact ${ms} ms after you swung. Swing ${Math.max(1, ms - pfMs)} ms later for a perfect.`;
+    } else if (r === "early") {
+      big = "Too early"; cls = "bad"; detail = `The ball arrived ${ms} ms after you swung`;
+    } else if (r === "late") {
+      lead = -ms; big = "Too late"; cls = "bad"; detail = `You swung ${ms} ms after the ball went past`;
+    } else {
+      lead = null; big = "Miss"; cls = "miss"; detail = "The ball didn't come near you";
+    }
+  }
+  tr.res.textContent = big;
+  tr.res.className = "tr-res " + cls;
+  tr.detail.textContent = detail;
+  if (lead !== null) {
+    const x = barPos(lead);
+    tr.mark.hidden = false;
+    tr.mark.style.left = `${x}%`;
+    tr.mark.classList.remove("pop");
+    void tr.mark.offsetWidth;
+    tr.mark.classList.add("pop");
+    recent.push(x);
+    if (recent.length > 8) recent.shift();
+    tr.ghosts.innerHTML = recent.slice(0, -1).map((g) => `<i class="tr-ghost" style="left:${g.toFixed(1)}%"></i>`).join("");
+  } else {
+    // A miss has no timing, so the bar shows only the earlier swings.
+    tr.mark.hidden = true;
+    tr.ghosts.innerHTML = recent.map((g) => `<i class="tr-ghost" style="left:${g.toFixed(1)}%"></i>`).join("");
+  }
+  tr.stats.textContent = `${st.swings} swing${st.swings === 1 ? "" : "s"} · ${st.hits} hit${st.hits === 1 ? "" : "s"} · ${st.perfect} perfect` +
+    (st.best > 1 ? ` · best streak ${st.best}` : "");
 }
 
 const specEl = document.getElementById("spectate")!;

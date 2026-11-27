@@ -13,12 +13,17 @@ flare.renderOrder = 5;
 const light = new THREE.PointLight(0xffffff, 0, 18, 2);
 const shadow = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.6), new THREE.MeshBasicMaterial({ color: 0x000000, alphaMap: softTex, transparent: true, opacity: 0.6, depthWrite: false }));
 shadow.rotation.x = -Math.PI / 2;
-const groundRing = new THREE.Mesh(new THREE.RingGeometry(0.42, 0.56, 40), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false }));
-groundRing.rotation.x = -Math.PI / 2;
-const dropGeo = new THREE.BufferGeometry().setFromPoints([v3(), v3()]);
-const drop = new THREE.Line(dropGeo, new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.3, depthWrite: false }));
-drop.frustumCulled = false;
-scene.add(core, glow, flare, light, shadow, groundRing, drop);
+// Marker on the floor under the ball: a dark band (so it reads on top of bright floor lines),
+// a bright ring and centre dot in the ball's colour, and a thin glowing post up to the ball.
+const additive = () => new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
+const groundHalo = new THREE.Mesh(new THREE.RingGeometry(0.48, 1.0, 48), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.55, depthWrite: false }));
+const groundRing = new THREE.Mesh(new THREE.RingGeometry(0.6, 0.84, 48), additive());
+const groundDot = new THREE.Mesh(new THREE.CircleGeometry(0.17, 24), additive());
+for (const m of [groundHalo, groundRing, groundDot]) m.rotation.x = -Math.PI / 2;
+groundHalo.renderOrder = 1;
+groundRing.renderOrder = groundDot.renderOrder = 2;
+const drop = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1, 8).translate(0, 0.5, 0), additive());
+scene.add(core, glow, flare, light, shadow, groundHalo, groundRing, groundDot, drop);
 
 // ------------------------------------------------------------------ trail ribbon
 
@@ -142,7 +147,7 @@ let scale = 0;
 export function updateBall(dt: number, rt: number, now: number, s: BallView) {
   scale = s.visible ? Math.min(1, scale + dt * 5) : Math.max(0, scale - dt * 6);
   const vis = scale > 0.01;
-  core.visible = glow.visible = shadow.visible = groundRing.visible = drop.visible = vis;
+  core.visible = glow.visible = shadow.visible = groundHalo.visible = groundRing.visible = groundDot.visible = drop.visible = vis;
   const c = s.color, sf = s.speedFrac, fr = s.frozen;
   const ch = s.charge ?? 0;
   const pulse = fr ? (1 + 0.3 * Math.sin(rt * (38 + 30 * ch))) * (1 + 1.2 * ch) : 1;
@@ -167,14 +172,22 @@ export function updateBall(dt: number, rt: number, now: number, s: BallView) {
   shadow.position.set(s.x, 0.02, s.z);
   shadow.scale.setScalar((1.1 - h * 0.5) * scale);
   (shadow.material as THREE.MeshBasicMaterial).opacity = 0.65 - h * 0.35;
-  groundRing.position.set(s.x, 0.03, s.z);
-  (groundRing.material as THREE.MeshBasicMaterial).color.copy(c).multiplyScalar(1.8);
-  (groundRing.material as THREE.MeshBasicMaterial).opacity = (0.35 + 0.4 * sf) * scale;
-  const a = dropGeo.attributes.position as THREE.BufferAttribute;
-  a.setXYZ(0, s.x, s.y - BALL_R, s.z);
-  a.setXYZ(1, s.x, 0.03, s.z);
-  a.needsUpdate = true;
-  (drop.material as THREE.LineBasicMaterial).color.copy(c);
-  (drop.material as THREE.LineBasicMaterial).opacity = 0.32 * scale;
+  // The marker grows a little with the ball's height, so a high ball still shows where it is.
+  const ms = (1 + 0.35 * h) * scale;
+  groundHalo.position.set(s.x, 0.025, s.z);
+  groundHalo.scale.setScalar(ms);
+  (groundHalo.material as THREE.MeshBasicMaterial).opacity = 0.55 * scale;
+  groundRing.position.set(s.x, 0.035, s.z);
+  groundRing.scale.setScalar(ms);
+  (groundRing.material as THREE.MeshBasicMaterial).color.copy(c).multiplyScalar(2.2);
+  (groundRing.material as THREE.MeshBasicMaterial).opacity = (0.8 + 0.2 * sf) * scale;
+  groundDot.position.set(s.x, 0.035, s.z);
+  groundDot.scale.setScalar(scale);
+  (groundDot.material as THREE.MeshBasicMaterial).color.copy(c).multiplyScalar(2.2);
+  (groundDot.material as THREE.MeshBasicMaterial).opacity = 0.9 * scale;
+  drop.position.set(s.x, 0.035, s.z);
+  drop.scale.set(scale, Math.max(0.001, s.y - BALL_R - 0.035), scale);
+  (drop.material as THREE.MeshBasicMaterial).color.copy(c).multiplyScalar(1.6);
+  (drop.material as THREE.MeshBasicMaterial).opacity = 0.5 * scale;
   updateTrail(now, sf, c, scale);
 }

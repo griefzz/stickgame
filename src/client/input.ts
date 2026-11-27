@@ -4,7 +4,7 @@
 // the player's bindings (binds.ts); menu navigation keys are fixed.
 import { actionsForKb, allKbCodes, kbBinds, onBindsChange, padBinds, type Action } from "./binds";
 
-export type UiEvent = "up" | "down" | "left" | "right" | "ok" | "back" | "start" | "cam" | "mute" | "full";
+export type UiEvent = "up" | "down" | "left" | "right" | "ok" | "back" | "start" | "cam" | "mute" | "full" | "reset";
 
 export interface GameInput {
   mx: number; mz: number; ay: number; ax: number;
@@ -57,6 +57,7 @@ function press(code: string) {
     }
     if (a === "cam") uiHandler("cam");
     else if (a === "mute") uiHandler("mute");
+    else if (a === "reset") uiHandler("reset");
   }
 }
 
@@ -224,6 +225,7 @@ export function pollPads(rt: number) {
   if (pressed(9)) uiHandler("start");
   if (aPressed("cam")) uiHandler("cam");
   if (aPressed("mute")) uiHandler("mute");
+  if (aPressed("reset")) uiHandler("reset");
   save();
 }
 

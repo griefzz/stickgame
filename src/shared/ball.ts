@@ -40,7 +40,7 @@ function walls(b: BallKin, a: Arena, e: number, cb?: BounceFn) {
   constrain(a, b, BALL_R);
 }
 
-/** Curved 3D shells (sphere, slide): reflect off the surface normal in full 3D. */
+/** Curved 3D shells: reflect off the surface normal in full 3D. */
 function shellBounce(b: BallKin, s: Shell, e: number, cb?: BounceFn) {
   for (let pass = 0; pass < 4; pass++) {
     const over = shellDist(s, b.x, b.y, b.z) + BALL_R;

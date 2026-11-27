@@ -40,7 +40,10 @@ export type ClientMsg =
   | { t: "rl" }                       // leave the room
   | { t: "rb"; on: 0 | 1 }            // host: let bots fill empty seats
   | { t: "rs" }                       // host: start the match
-  | { t: "ra"; a: number };           // host: arena (-1 = random)
+  | { t: "ra"; a: number }            // host: arena (-1 = random)
+  | { t: "tr"; a: number }            // start training in this arena
+  | { t: "tra"; a: number }           // training: switch to this arena
+  | { t: "trr" };                     // training: reset the player and the ball
 
 export interface RosterEntry { n: string; b: 0 | 1; w: number } // name, bot, weapon
 
@@ -60,7 +63,7 @@ export type ServerMsg =
   | { t: "w"; id: number; v: number; size: number; bf: number; b: string; ver: string }
   | { t: "st"; on: number; q: number; m: number; b: string }
   | { t: "qs"; n: number; min: number; max: number; sIn: number; names: string[]; bf: number; bo: number }
-  | { t: "go"; slot: number; roster: (RosterEntry | null)[]; st: number; cdEnd: number; practice: 0 | 1; rm: string | null; ar: number }
+  | { t: "go"; slot: number; roster: (RosterEntry | null)[]; st: number; cdEnd: number; practice: 0 | 1; rm: string | null; ar: number; tr: 0 | 1 }
   | { t: "s"; a: number; st: number; ph: number; p: (number[] | null)[]; b: number[] }
   | { t: "e"; k: string; st: number; [key: string]: unknown }
   | { t: "po"; c: number; s: number }
